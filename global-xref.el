@@ -189,9 +189,17 @@ Return the results as a list."
     (global-xref-update-file buffer-file-name)))
 
 (defun global-xref--find-file-hook ()
-  "After save hook to update GLOBAL database with changed data."
-  (when buffer-file-name
-    (global-xref-update-file buffer-file-name)))
+  "Try to enable `global-xref' when opening a file.
+Check the roots and enable `global-xref' if the found-file is in
+one of them."
+  (let ((truename (file-truename buffer-file-name)))
+    (catch 'found
+      (mapc (lambda (x)
+	      (when (string-prefix-p x truename)
+		(global-xref-mode 1)
+		(throw 'found x)))
+	    global-xref--roots-list)
+      nil)))
 
 ;; xref integration
 (defun global-xref--find-symbol (args symbol)
@@ -250,12 +258,14 @@ any additional command line arguments to pass to GNU Global."
    (global-xref-mode
     (global-xref--set-connection-locals)
     (setq global-xref--project-root (global-xref--find-root))
+    (add-hook 'find-file-hook #'global-xref--find-file-hook t)
     (add-hook 'xref-backend-functions #'global-xref-xref-backend nil t)
     (add-hook 'after-save-hook #'global-xref--after-save-hook nil t)
     (setq global-xref--imenu-default-function imenu-create-index-function)
     (setq imenu-create-index-function #'global-xref-imenu-create-index-function))
    (t
     (setq global-xref--project-root nil)
+    (remove-hook 'find-file-hook #'global-xref--find-file-hook)
     (remove-hook 'xref-backend-functions #'global-xref-xref-backend t)
     (remove-hook 'after-save-hook #'global-xref--after-save-hook t)
     (setq imenu-create-index-function global-xref--imenu-default-function))))
