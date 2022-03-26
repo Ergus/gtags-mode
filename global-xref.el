@@ -115,23 +115,25 @@ the cases"
 
 (defun global-xref--set-connection-locals ()
   "Set GLOBAL connection local variables when possible."
-  (when-let* ((host (file-remote-p default-directory 'host))
-	      (symvars (intern (concat "global-xref-" host "-vars")))
-	      (criteria `(:machine ,host))
-	      (connection-local-variables-alist t))
-    (hack-connection-local-variables criteria)
-    (unless (alist-get 'global-xref--global connection-local-variables-alist)
-      (connection-local-set-profile-variables
-       symvars
-       `((global-xref--global . ,(executable-find (file-name-base global-xref-global) t))
-	 (global-xref--gtags . ,(executable-find (file-name-base global-xref-gtags) t))))
-      (connection-local-set-profiles criteria symvars))))
+  (when-let ((host (file-remote-p default-directory 'host)))
+    (let ((symvars (intern (concat "global-xref-" host "-vars")))
+	  (criteria `(:machine ,host))
+	  connection-local-variables-alist)
+      (hack-connection-local-variables criteria)
+      (unless (alist-get 'global-xref--global connection-local-variables-alist)
+	(connection-local-set-profile-variables
+	 symvars
+	 `((global-xref--global . ,(executable-find (file-name-base global-xref-global) t))
+	   (global-xref--gtags . ,(executable-find (file-name-base global-xref-gtags) t))))
+	(connection-local-set-profiles criteria symvars)))))
 
 (defun global-xref--find-root ()
   "Return the GLOBAL project root.  Return nil if none."
   (let ((root (global-xref--exec 'global-xref--global '("--print-dbpath") nil nil)))
     (when root
-      (add-to-list 'global-xref--roots-list root)
+      (add-to-list 'global-xref--roots-list
+		   (concat (file-remote-p default-directory)
+			   (file-truename root)))
       root)))
 
 (defun global-xref--filter-find-symbol (creator args symbol)
