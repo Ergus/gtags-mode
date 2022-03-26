@@ -60,6 +60,7 @@
     (nreverse lines)))
 
 (defvar global-xref--roots-list nil)
+(put 'global-xref--roots-list 'risky-local-variable t)
 
 (defvar-local global-xref--global (executable-find global-xref-global))
 (defvar-local global-xref--gtags (executable-find global-xref-gtags))
@@ -86,13 +87,13 @@ the cases"
 	    (lambda (process event)
 	      (if-let* (((eq (process-status process) 'exit))
 			(temp-buffer (process-buffer process)))
-		(with-current-buffer temp-buffer
-		  (while (accept-process-output process))
-		  (when (functionp postfunction)
-		    (unwind-protect
-			(funcall postfunction)
-		      (and (buffer-name temp-buffer)
-			   (kill-buffer temp-buffer)))))
+		  (with-current-buffer temp-buffer
+		    (while (accept-process-output process))
+		    (when (functionp postfunction)
+		      (unwind-protect
+			  (funcall postfunction)
+			(and (buffer-name temp-buffer)
+			     (kill-buffer temp-buffer)))))
 		(let ((inhibit-message t))
 		  (message "global error output:\n%s" (buffer-string))))
 	      (message "Async %s: %s" (process-command process) event)))
@@ -104,7 +105,7 @@ the cases"
 	       (if (functionp postfunction)
 		   (funcall postfunction)
 		 (string-trim (buffer-substring-no-properties (point-min) (point-max))))
-	     (error "Sync %s: exited abnormally with code %s" cmd status)
+	     (error "Sync %s %s: exited abnormally with code %s" cmd args status)
 	     (let ((inhibit-message t))
 	       (message "global error output:\n%s" (buffer-string)))
 	     nil)))))))
