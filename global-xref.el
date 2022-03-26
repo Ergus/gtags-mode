@@ -234,13 +234,12 @@ any additional command line arguments to pass to GNU Global."
 
 (defun global-xref-imenu-create-index-function ()
   "Make imenu use gtags."
-  (when-let ((commandfile (or (file-remote-p buffer-file-name 'localname)
-			      buffer-file-name)))
+  (when buffer-file-name
     (global-xref--filter-find-symbol
      (lambda (name _code _file line)
        (list name line #'global-xref--imenu-goto-function))
      '("--file")
-     commandfile)))
+     (file-name-nondirectory buffer-file-name))))
 
 ;;;###autoload
 (define-minor-mode global-xref-mode
