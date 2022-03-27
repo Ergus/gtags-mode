@@ -31,6 +31,7 @@
 
 (require 'xref)
 (require 'cl-generic)
+(require 'files-x)
 
 (defgroup global-xref nil
   "GNU Global grup for xref."
@@ -67,53 +68,9 @@ the address is relative on remote hosts.")
   '("--result=ctags-x" "--path-style=absolute")
   "Command line options to use with `global-xref--output-format-regex'.")
 
-(defun global-xref--exec-async (command args)
-  "Run COMMAND with ARGS asynchronously.
-Starts an async process and sets an informative process sentinel.
-Returns the process handler."
-  (with-connection-local-variables
-   (when-let* ((cmd (symbol-value command))
-	       (process (apply #'start-file-process
-			       (format "%s-async" cmd)
-			       (generate-new-buffer " *temp*" t) cmd args)))
-     (set-process-sentinel
-      process
-      (lambda (process event)
-	(let ((temp-buffer (process-buffer process)))
-	  (while (accept-process-output process))
-	  (if (eq (process-status process) 'exit)
-	      (and (buffer-name temp-buffer)
-		   (kill-buffer temp-buffer))
-	    (with-current-buffer temp-buffer
-	      (message "global error output:\n%s" (buffer-string)))))
-	(message "Async %s: %s" (process-command process) event)))
-     process)))
-
-(defun global-xref--exec-sync (command args)
-  "Run COMMAND with ARGS synchronously.
-Starts a sync process returns the output of the command as a list
-of strings or nil if any error occurred."
-  (with-connection-local-variables
-   (when-let ((cmd (symbol-value command)))
-     (with-temp-buffer ;; When sync
-       (let ((status (apply #'process-file cmd nil (current-buffer) nil args)))
-	 (if (eq status 0)
-	     (let (lines substring)
-	       (goto-char (point-min))
-	       (while (not (eobp))
-		 (when (not (string-blank-p
-			     (setq substring (buffer-substring-no-properties
-					      (line-beginning-position)
-					      (line-end-position)))))
-		   (push substring lines))
-		 (forward-line 1))
-	       (nreverse lines))
-	   (message "global error output:\n%s" (buffer-string))
-	   (error "Sync %s %s: exited abnormally with code %s" cmd args status)
-	   nil))))))
-
+;; Connection functions
 (defun global-xref--set-connection-locals ()
-  "Set GLOBAL connection local variables when possible."
+  "Set GLOBAL connection local variables when possible and needed."
   (when-let* ((host (file-remote-p default-directory 'host))
 	      (symvars (intern (concat "global-xref-" host "-vars")))
 	      ((not (alist-get symvars connection-local-profile-alist)))
@@ -124,6 +81,62 @@ of strings or nil if any error occurred."
        (global-xref--gtags . ,(executable-find (file-name-base global-xref-gtags) t))))
     (connection-local-set-profiles criteria symvars)))
 
+;; Async functions
+(defun global-xref--exec-async-sentinel (process event)
+  "Sentinel to run when PROCESS emits EVENT.
+This is the sentinel set in `global-xref--exec-async'."
+  (let ((temp-buffer (process-buffer process)))
+    (while (accept-process-output process))
+    (if (eq (process-status process) 'exit)
+	(and (buffer-name temp-buffer)
+	     (kill-buffer temp-buffer))
+      (with-current-buffer temp-buffer
+	(while (accept-process-output process))
+	(while (accept-process-output process))
+	(message "global error output:\n%s" (buffer-string)))))
+  (message "Async %s: %s" (process-command process) event))
+
+(defun global-xref--exec-async (command args)
+  "Run COMMAND with ARGS asynchronously.
+Starts an async process and sets an informative process sentinel.
+Returns the process handler."
+  (with-connection-local-variables
+   (when-let* ((cmd (symbol-value command))
+	       (process (apply #'start-file-process
+			       (format "%s-async" cmd)
+			       (generate-new-buffer " *temp*" t) cmd args)))
+     (set-process-sentinel process #'global-xref--exec-async-sentinel)
+     process)))
+
+;; Sync functions
+(defun global-xref--sync-sentinel ()
+  "Return current buffer text as a list of strings."
+  (let (lines substring)
+    (goto-char (point-min))
+    (while (not (eobp))
+      (setq substring (buffer-substring-no-properties
+		       (line-beginning-position)
+		       (line-end-position)))
+      (unless (string-blank-p substring)
+	(push substring lines))
+      (forward-line 1))
+    (nreverse lines)))
+
+(defun global-xref--exec-sync (command args)
+  "Run COMMAND with ARGS synchronously.
+Starts a sync process returns the output of the command as a list
+of strings or nil if any error occurred."
+  (with-connection-local-variables
+   (when-let ((cmd (symbol-value command)))
+     (with-temp-buffer ;; When sync
+       (let ((status (apply #'process-file cmd nil (current-buffer) nil args)))
+	 (if (eq status 0)
+	     (global-xref--sync-sentinel)
+	   (message "global error output:\n%s" (buffer-string))
+	   (error "Sync %s %s: exited abnormally with code %s" cmd args status)
+	   nil))))))
+
+;; Api functions
 (defun global-xref--find-root ()
   "Return the GLOBAL project root.  Return nil if none."
   (let ((root (car (global-xref--exec-sync 'global-xref--global '("--print-dbpath")))))
@@ -153,7 +166,7 @@ name, code, file, line."
      (append args global-xref--output-format-options
 	     (list (shell-quote-argument symbol)))))))
 
-;; Interactive commands.
+;; Interactive commands ==============================================
 (defun global-xref-create-db (root-dir)
   "Create a GLOBAL database in ROOT-DIR asynchronously."
   (interactive "DCreate db in directory: ")
@@ -186,7 +199,7 @@ one of them."
 	    global-xref--roots-list)
       nil)))
 
-;; xref integration
+;; xref integration ==================================================
 (defun global-xref--find-symbol (args symbol)
   "Run GNU Global to create xref input list with ARGS on SYMBOL.
 Return the results as a list of xref location objects.  ARGS are
@@ -218,7 +231,7 @@ any additional command line arguments to pass to GNU Global."
   "List grepped list of candidates SYMBOL."
   (global-xref--find-symbol '("--grep") symbol))
 
-;; imenu integration
+;; imenu integration =================================================
 (defvar-local global-xref--imenu-default-function nil)
 
 (defun global-xref--imenu-goto-function (_name line)
