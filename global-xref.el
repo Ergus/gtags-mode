@@ -86,26 +86,27 @@ the address is relative on remote hosts.")
   "Sentinel to run when PROCESS emits EVENT.
 This is the sentinel set in `global-xref--exec-async'."
   (let ((temp-buffer (process-buffer process)))
-    (while (accept-process-output process))
     (if (eq (process-status process) 'exit)
 	(and (buffer-name temp-buffer)
 	     (kill-buffer temp-buffer))
       (with-current-buffer temp-buffer
 	(while (accept-process-output process))
-	(while (accept-process-output process))
 	(message "global error output:\n%s" (buffer-string)))))
   (message "Async %s: %s" (process-command process) event))
 
-(defun global-xref--exec-async (command args)
-  "Run COMMAND with ARGS asynchronously.
-Starts an async process and sets an informative process sentinel.
-Returns the process handler."
+(defun global-xref--exec-async (command args &optional sentinel)
+  "Run COMMAND with ARGS asynchronously and set SENTINEL to process.
+Starts an asynchronous process and sets
+`global-xref--exec-async-sentinel' as the process sentinel if
+SENTINEL is 'nil' or not specified.  Returns the process
+handler."
   (with-connection-local-variables
    (when-let* ((cmd (symbol-value command))
 	       (process (apply #'start-file-process
 			       (format "%s-async" cmd)
-			       (generate-new-buffer " *temp*" t) cmd args)))
-     (set-process-sentinel process #'global-xref--exec-async-sentinel)
+			       (generate-new-buffer " *temp*" t) cmd args))
+	       (sentinel (or sentinel #'global-xref--exec-async-sentinel)))
+     (set-process-sentinel process sentinel)
      process)))
 
 ;; Sync functions
@@ -122,16 +123,19 @@ Returns the process handler."
       (forward-line 1))
     (nreverse lines)))
 
-(defun global-xref--exec-sync (command args)
-  "Run COMMAND with ARGS synchronously.
-Starts a sync process returns the output of the command as a list
-of strings or nil if any error occurred."
+(defun global-xref--exec-sync (command args &optional sentinel)
+  "Run COMMAND with ARGS synchronously, on success call SENTINEL.
+Starts a sync process; on success call SENTINEL or
+`global-xref--sync-sentinel' if SENTINEL is not specified or
+'nil'.  Returns the output of SENTINEL or nil if any error
+occurred."
   (with-connection-local-variables
-   (when-let ((cmd (symbol-value command)))
+   (when-let ((cmd (symbol-value command))
+	      (sentinel (or sentinel #'global-xref--sync-sentinel)))
      (with-temp-buffer ;; When sync
        (let ((status (apply #'process-file cmd nil (current-buffer) nil args)))
 	 (if (eq status 0)
-	     (global-xref--sync-sentinel)
+	     (funcall sentinel)
 	   (message "global error output:\n%s" (buffer-string))
 	   (error "Sync %s %s: exited abnormally with code %s" cmd args status)
 	   nil))))))
@@ -147,9 +151,9 @@ of strings or nil if any error occurred."
       root)))
 
 (defun global-xref--filter-find-symbol (args symbol creator)
-  "Run global-xref--exec-sync with ARGS on SYMBOL and filter output with CREATOR.
+  "Run `global-xref--exec-sync' with ARGS on SYMBOL and filter output with CREATOR.
 Returns the results as a list of CREATORS outputs similar to
-mapcar.  Creator should be a function with 4 input arguments:
+`mapcar'.  Creator should be a function with 4 input arguments:
 name, code, file, line."
   (remove
    nil
@@ -164,11 +168,11 @@ name, code, file, line."
     (global-xref--exec-sync
      'global-xref--global
      (append args global-xref--output-format-options
-	     (list (shell-quote-argument symbol)))))))
+	     `(,(shell-quote-argument symbol)))))))
 
 ;; Interactive commands ==============================================
-(defun global-xref-create-db (root-dir)
-  "Create a GLOBAL database in ROOT-DIR asynchronously."
+(defun global-xref-create (root-dir)
+  "Create a GLOBAL GTAGS file in ROOT-DIR asynchronously."
   (interactive "DCreate db in directory: ")
   (let ((default-directory root-dir))
     (global-xref--exec-async 'global-xref--gtags nil)))
@@ -244,7 +248,7 @@ any additional command line arguments to pass to GNU Global."
     (global-xref--filter-find-symbol
      '("--file") (file-name-nondirectory buffer-file-name)
      (lambda (name _code _file line)
-       (list name line #'global-xref--imenu-goto-function)))))
+       `(,name ,line #'global-xref--imenu-goto-function)))))
 
 ;;;###autoload
 (define-minor-mode global-xref-mode
