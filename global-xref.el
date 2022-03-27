@@ -39,15 +39,18 @@
 
 (defcustom global-xref-global "global"
   "GNU Global executable."
-  :type 'string)
+  :type 'string
+  :local t)
 
 (defcustom global-xref-gtags "gtags"
   "Gtags executable."
-  :type 'string)
+  :type 'string
+  :local t)
 
 (defcustom global-xref-lighter "Global-Xref"
   "Gtags executable."
-  :type 'string)
+  :type 'string
+  :risky t)
 
 (defvar global-xref--roots-list nil
   "Full list of project Global root.
@@ -72,14 +75,26 @@ the address is relative on remote hosts.")
 (defun global-xref--set-connection-locals ()
   "Set GLOBAL connection local variables when possible and needed."
   (when-let* ((host (file-remote-p default-directory 'host))
-	      (symvars (intern (concat "global-xref-" host "-vars")))
-	      ((not (alist-get symvars connection-local-profile-alist)))
-	      (criteria `(:machine ,host)))
-    (connection-local-set-profile-variables
-     symvars
-     `((global-xref--global . ,(executable-find (file-name-base global-xref-global) t))
-       (global-xref--gtags . ,(executable-find (file-name-base global-xref-gtags) t))))
-    (connection-local-set-profiles criteria symvars)))
+	      ((not (and (local-variable-p 'global-xref--global)
+			 (local-variable-p 'global-xref--gtags))))
+	      (symvars (intern (concat "global-xref--" host "-vars")))
+	      (enable-connection-local-variables t))
+    (unless (alist-get symvars connection-local-profile-alist)
+      (with-connection-local-variables
+       (let ((criteria `(:machine ,host))
+	     (xref-global (if (local-variable-p 'global-xref-global)
+			      global-xref-global
+			    (file-name-nondirectory global-xref-global)))
+	     (xref-gtags (if (local-variable-p 'gtags-xref-global)
+			     global-xref-gtags
+			   (file-name-nondirectory global-xref-gtags))))
+	 (connection-local-set-profile-variables
+	  symvars
+	  `((global-xref--global . ,(executable-find xref-global t))
+	    (global-xref--gtags . ,(executable-find xref-gtags t))))
+	 (connection-local-set-profiles criteria symvars))))
+    (hack-connection-local-variables-apply
+     (connection-local-criteria-for-default-directory))))
 
 ;; Async functions
 (defun global-xref--exec-async-sentinel (process event)
@@ -91,7 +106,7 @@ This is the sentinel set in `global-xref--exec-async'."
 	     (kill-buffer temp-buffer))
       (with-current-buffer temp-buffer
 	(while (accept-process-output process))
-	(message "global error output:\n%s" (buffer-string)))))
+	(message "Global error output:\n%s" (buffer-string)))))
   (message "Async %s: %s" (process-command process) event))
 
 (defun global-xref--exec-async (command args &optional sentinel)
