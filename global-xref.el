@@ -48,126 +48,130 @@
   "Gtags executable."
   :type 'string)
 
-(defun global-xref--buffer-to-list ()
-  "Return lines in current buffer in a list."
-  (let ((lines))
-    (goto-char (point-min))
-    (while (not (eobp))
-      (push (buffer-substring-no-properties
-	     (line-beginning-position) (line-end-position))
-	    lines)
-      (forward-line 1))
-    (nreverse lines)))
-
-(defvar global-xref--roots-list nil)
+(defvar global-xref--roots-list nil
+  "Full list of project Global root.
+The address is absolute on remote hsts.")
 (put 'global-xref--roots-list 'risky-local-variable t)
 
 (defvar-local global-xref--global (executable-find global-xref-global))
 (defvar-local global-xref--gtags (executable-find global-xref-gtags))
 (defvar-local global-xref--project-root nil
-  "Project Global root for this buffer.")
+  "Project Global root for this buffer.
+the address is relative on remote hosts.")
 
-(defun global-xref--exec (command args async &optional postfunction)
-  "Run COMMAND-SYM with and ARGS, in ASYNC way.
-When ASYNC is 'nil' executes command synchronously; returns the
-output of the command as a string or calls POSTFUNCTION in the
-command's buffer and returns the result.  returns nil if an error
-occurred.
-When ASYNC is non-nil starts an async process and executes the
-ignores.  Returns the process handler."
+(defconst global-xref--output-format-regex
+  "^\\([^ \t]+\\)[ \t]+\\([0-9]+\\)[ \t]+\\([^ \t\]+\\)[ \t]+\\(.*\\)"
+  "Regex to filter the output with `global-xref--output-format-options'.")
+
+(defconst global-xref--output-format-options
+  '("--result=ctags-x" "--path-style=absolute")
+  "Command line options to use with `global-xref--output-format-regex'.")
+
+(defun global-xref--exec-async (command args)
+  "Run COMMAND with ARGS asynchronously.
+Starts an async process and sets an informative process sentinel.
+Returns the process handler."
   (with-connection-local-variables
-   (when-let (cmd (symbol-value command))
-     (if async ;; When async
-	 (let ((process (apply #'start-file-process
+   (when-let* ((cmd (symbol-value command))
+	       (process (apply #'start-file-process
 			       (format "%s-async" cmd)
 			       (generate-new-buffer " *temp*" t) cmd args)))
-	   (set-process-sentinel
-	    process
-	    (lambda (process event)
-	      (let ((temp-buffer (process-buffer process)))
-		(while (accept-process-output process))
-		(if (eq (process-status process) 'exit)
-		    (and (buffer-name temp-buffer)
-			 (kill-buffer temp-buffer))
-		  (with-current-buffer temp-buffer
-		    (message "global error output:\n%s" (buffer-string)))))
-	      (message "Async %s: %s" (process-command process) event)))
-	   process)
-       (with-temp-buffer ;; When sync
-	 (let ((status (apply #'process-file cmd nil (current-buffer) nil args)))
-	   (if (eq status 0)
-	       (if (functionp postfunction)
-		   (funcall postfunction)
-		 (string-trim (buffer-substring-no-properties (point-min) (point-max))))
-	     (message "global error output:\n%s" (buffer-string))
-	     (error "Sync %s %s: exited abnormally with code %s" cmd args status)
-	     nil)))))))
+     (set-process-sentinel
+      process
+      (lambda (process event)
+	(let ((temp-buffer (process-buffer process)))
+	  (while (accept-process-output process))
+	  (if (eq (process-status process) 'exit)
+	      (and (buffer-name temp-buffer)
+		   (kill-buffer temp-buffer))
+	    (with-current-buffer temp-buffer
+	      (message "global error output:\n%s" (buffer-string)))))
+	(message "Async %s: %s" (process-command process) event)))
+     process)))
 
-(defsubst global-xref--to-list (args)
-  "Run GLOBAL with `process-file' and ARGS; return a list."
-  (global-xref--exec 'global-xref--global args nil #'global-xref--buffer-to-list))
+(defun global-xref--exec-sync (command args)
+  "Run COMMAND with ARGS synchronously.
+Starts a sync process returns the output of the command as a list
+of strings or nil if any error occurred."
+  (with-connection-local-variables
+   (when-let ((cmd (symbol-value command)))
+     (with-temp-buffer ;; When sync
+       (let ((status (apply #'process-file cmd nil (current-buffer) nil args)))
+	 (if (eq status 0)
+	     (let (lines substring)
+	       (goto-char (point-min))
+	       (while (not (eobp))
+		 (when (not (string-blank-p
+			     (setq substring (buffer-substring-no-properties
+					      (line-beginning-position)
+					      (line-end-position)))))
+		   (push substring lines))
+		 (forward-line 1))
+	       (nreverse lines))
+	   (message "global error output:\n%s" (buffer-string))
+	   (error "Sync %s %s: exited abnormally with code %s" cmd args status)
+	   nil))))))
 
 (defun global-xref--set-connection-locals ()
   "Set GLOBAL connection local variables when possible."
-  (when-let ((host (file-remote-p default-directory 'host)))
-    (let ((symvars (intern (concat "global-xref-" host "-vars")))
-	  (criteria `(:machine ,host))
-	  connection-local-variables-alist)
-      (hack-connection-local-variables criteria)
-      (unless (alist-get 'global-xref--global connection-local-variables-alist)
-	(connection-local-set-profile-variables
-	 symvars
-	 `((global-xref--global . ,(executable-find (file-name-base global-xref-global) t))
-	   (global-xref--gtags . ,(executable-find (file-name-base global-xref-gtags) t))))
-	(connection-local-set-profiles criteria symvars)))))
+  (when-let* ((host (file-remote-p default-directory 'host))
+	      (symvars (intern (concat "global-xref-" host "-vars")))
+	      ((not (alist-get symvars connection-local-profile-alist)))
+	      (criteria `(:machine ,host)))
+    (connection-local-set-profile-variables
+     symvars
+     `((global-xref--global . ,(executable-find (file-name-base global-xref-global) t))
+       (global-xref--gtags . ,(executable-find (file-name-base global-xref-gtags) t))))
+    (connection-local-set-profiles criteria symvars)))
 
 (defun global-xref--find-root ()
   "Return the GLOBAL project root.  Return nil if none."
-  (let ((root (global-xref--exec 'global-xref--global '("--print-dbpath") nil)))
+  (let ((root (car (global-xref--exec-sync 'global-xref--global '("--print-dbpath")))))
     (when root
       (add-to-list 'global-xref--roots-list
 		   (concat (file-remote-p default-directory)
 			   (file-truename root)))
       root)))
 
-(defun global-xref--filter-find-symbol (creator args symbol)
-  "Run GNU Global and apply CREATOR to global-xref--to-list output.
-Return the results as a list."
+(defun global-xref--filter-find-symbol (args symbol creator)
+  "Run global-xref--exec-sync with ARGS on SYMBOL and filter output with CREATOR.
+Returns the results as a list of CREATORS outputs similar to
+mapcar.  Creator should be a function with 4 input arguments:
+name, code, file, line."
   (remove
    nil
-   (mapcar (lambda (line)
-	     (when (string-match
-		    "^\\([^ \t]+\\)[ \t]+\\([0-9]+\\)[ \t]+\\([^ \t\]+\\)[ \t]+\\(.*\\)"
-		    line)
-	       (funcall creator
-			(match-string 1 line)   ;; name
-			(match-string 4 line)   ;; code
-			(match-string 3 line)   ;; file
-			(string-to-number (match-string 2 line)) ;; line
-			)))
-	   (global-xref--to-list
-	    (append args (list "--result=ctags-x" "--path-style=absolute"
-			       (shell-quote-argument symbol)))))))
+   (mapcar
+    (lambda (line)
+      (when (string-match global-xref--output-format-regex line)
+	(funcall creator
+		 (match-string 1 line)   ;; name
+		 (match-string 4 line)   ;; code
+		 (match-string 3 line)   ;; file
+		 (string-to-number (match-string 2 line))))) ;; line
+    (global-xref--exec-sync
+     'global-xref--global
+     (append args global-xref--output-format-options
+	     (list (shell-quote-argument symbol)))))))
 
 ;; Interactive commands.
 (defun global-xref-create-db (root-dir)
   "Create a GLOBAL database in ROOT-DIR asynchronously."
   (interactive "DCreate db in directory: ")
   (let ((default-directory root-dir))
-    (global-xref--exec 'global-xref--gtags nil t)))
+    (global-xref--exec-async 'global-xref--gtags nil)))
 
 (defun global-xref-update ()
   "Update GLOBAL project database."
   (interactive)
   (if global-xref--project-root
-      (global-xref--exec 'global-xref--global '("--update") t)
+      (global-xref--exec-async 'global-xref--global '("--update"))
     (error "Not under a GLOBAL project")))
 
 (defun global-xref--after-save-hook ()
   "After save hook to update GLOBAL database with changed data."
   (when (and buffer-file-name global-xref--project-root)
-    (global-xref--exec
-     'global-xref--global `("--single-update" ,buffer-file-name) t)))
+    (global-xref--exec-async
+     'global-xref--global `("--single-update" ,buffer-file-name))))
 
 (defun global-xref--find-file-hook ()
   "Try to enable `global-xref' when opening a file.
@@ -188,11 +192,11 @@ one of them."
 Return the results as a list of xref location objects.  ARGS are
 any additional command line arguments to pass to GNU Global."
   (global-xref--filter-find-symbol
+   args symbol
    (lambda (_name code file line)
      (xref-make code (xref-make-file-location
 		      (concat (file-remote-p default-directory) file)
-		      line 0)))
-   args symbol))
+		      line 0)))))
 
 (defun global-xref-xref-backend ()
   "Global-Xref backend for Xref."
@@ -200,7 +204,7 @@ any additional command line arguments to pass to GNU Global."
 
 (cl-defmethod xref-backend-identifier-completion-table ((_backend (eql global-xref)))
   "List all symbols."
-  (global-xref--to-list '("--completion")))
+  (global-xref--exec-sync 'global-xref--global '("--completion")))
 
 (cl-defmethod xref-backend-definitions ((_backend (eql global-xref)) symbol)
   "List all definitions for SYMBOL."
@@ -225,10 +229,9 @@ any additional command line arguments to pass to GNU Global."
   "Make imenu use Global."
   (when buffer-file-name
     (global-xref--filter-find-symbol
+     '("--file") (file-name-nondirectory buffer-file-name)
      (lambda (name _code _file line)
-       (list name line #'global-xref--imenu-goto-function))
-     '("--file")
-     (file-name-nondirectory buffer-file-name))))
+       (list name line #'global-xref--imenu-goto-function)))))
 
 ;;;###autoload
 (define-minor-mode global-xref-mode
