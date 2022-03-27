@@ -67,15 +67,14 @@
 (defvar-local global-xref--project-root nil
   "Project Global root for this buffer.")
 
-(defun global-xref--exec (command args async postfunction)
+(defun global-xref--exec (command args async &optional postfunction)
   "Run COMMAND-SYM with and ARGS, in ASYNC way.
 When ASYNC is 'nil' executes command synchronously; returns the
 output of the command as a string or calls POSTFUNCTION in the
 command's buffer and returns the result.  returns nil if an error
 occurred.
 When ASYNC is non-nil starts an async process and executes the
-POSTFUNCTION in a sentinel.  Returns the process handler in all
-the cases"
+ignores.  Returns the process handler."
   (with-connection-local-variables
    (when-let (cmd (symbol-value command))
      (if async ;; When async
@@ -85,33 +84,27 @@ the cases"
 	   (set-process-sentinel
 	    process
 	    (lambda (process event)
-	      (if-let* (((eq (process-status process) 'exit))
-			(temp-buffer (process-buffer process)))
+	      (let ((temp-buffer (process-buffer process)))
+		(while (accept-process-output process))
+		(if (eq (process-status process) 'exit)
+		    (and (buffer-name temp-buffer)
+			 (kill-buffer temp-buffer))
 		  (with-current-buffer temp-buffer
-		    (while (accept-process-output process))
-		    (when (functionp postfunction)
-		      (unwind-protect
-			  (funcall postfunction)
-			(and (buffer-name temp-buffer)
-			     (kill-buffer temp-buffer)))))
-		(let ((inhibit-message t))
-		  (message "global error output:\n%s" (buffer-string))))
+		    (message "global error output:\n%s" (buffer-string)))))
 	      (message "Async %s: %s" (process-command process) event)))
 	   process)
-
        (with-temp-buffer ;; When sync
 	 (let ((status (apply #'process-file cmd nil (current-buffer) nil args)))
 	   (if (eq status 0)
 	       (if (functionp postfunction)
 		   (funcall postfunction)
 		 (string-trim (buffer-substring-no-properties (point-min) (point-max))))
+	     (message "global error output:\n%s" (buffer-string))
 	     (error "Sync %s %s: exited abnormally with code %s" cmd args status)
-	     (let ((inhibit-message t))
-	       (message "global error output:\n%s" (buffer-string)))
 	     nil)))))))
 
 (defsubst global-xref--to-list (args)
-  "Run GNU Global with `process-file' and ARGS return a list."
+  "Run GLOBAL with `process-file' and ARGS; return a list."
   (global-xref--exec 'global-xref--global args nil #'global-xref--buffer-to-list))
 
 (defun global-xref--set-connection-locals ()
@@ -130,7 +123,7 @@ the cases"
 
 (defun global-xref--find-root ()
   "Return the GLOBAL project root.  Return nil if none."
-  (let ((root (global-xref--exec 'global-xref--global '("--print-dbpath") nil nil)))
+  (let ((root (global-xref--exec 'global-xref--global '("--print-dbpath") nil)))
     (when root
       (add-to-list 'global-xref--roots-list
 		   (concat (file-remote-p default-directory)
@@ -142,15 +135,15 @@ the cases"
 Return the results as a list."
   (remove
    nil
-   (mapcar (lambda (gtags-x-line)
+   (mapcar (lambda (line)
 	     (when (string-match
 		    "^\\([^ \t]+\\)[ \t]+\\([0-9]+\\)[ \t]+\\([^ \t\]+\\)[ \t]+\\(.*\\)"
-		    gtags-x-line)
+		    line)
 	       (funcall creator
-			(match-string 1 gtags-x-line)   ;; name
-			(match-string 4 gtags-x-line)   ;; code
-			(match-string 3 gtags-x-line)   ;; file
-			(string-to-number (match-string 2 gtags-x-line)) ;; line
+			(match-string 1 line)   ;; name
+			(match-string 4 line)   ;; code
+			(match-string 3 line)   ;; file
+			(string-to-number (match-string 2 line)) ;; line
 			)))
 	   (global-xref--to-list
 	    (append args (list "--result=ctags-x" "--path-style=absolute"
@@ -161,35 +154,20 @@ Return the results as a list."
   "Create a GLOBAL database in ROOT-DIR asynchronously."
   (interactive "DCreate db in directory: ")
   (let ((default-directory root-dir))
-    (global-xref--exec
-     'global-xref--gtags '("--update") t
-     (lambda ()
-       (when (not global-xref--project-root)
-	 (setq global-xref--project-root (global-xref--find-root))
-	 (message "Set GLOBAL project-root: %s" global-xref--project-root))))))
+    (global-xref--exec 'global-xref--gtags nil t)))
 
 (defun global-xref-update ()
   "Update GLOBAL project database."
   (interactive)
   (if global-xref--project-root
-      (global-xref--exec 'global-xref--global '("--update") t t)
+      (global-xref--exec 'global-xref--global '("--update") t)
     (error "Not under a GLOBAL project")))
-
-(defun global-xref-update-file (file)
-  "Update GLOBAL project database for single FILE."
-  (interactive "fFile: ")
-  (if (and global-xref--project-root
-	   (file-exists-p file)
-	   (string-prefix-p global-xref--project-root (expand-file-name file)))
-      (global-xref--exec 'global-xref--global (list "--single-update" file) t t)
-    (when (called-interactively-p 'all)
-      (error "Database no updated Root: %s Buffer file: %s"
-	     global-xref--project-root file))))
 
 (defun global-xref--after-save-hook ()
   "After save hook to update GLOBAL database with changed data."
-  (when buffer-file-name
-    (global-xref-update-file buffer-file-name)))
+  (when (and buffer-file-name global-xref--project-root)
+    (global-xref--exec
+     'global-xref--global `("--single-update" ,buffer-file-name) t)))
 
 (defun global-xref--find-file-hook ()
   "Try to enable `global-xref' when opening a file.
@@ -244,11 +222,11 @@ any additional command line arguments to pass to GNU Global."
   (funcall-interactively #'goto-line line))
 
 (defun global-xref-imenu-create-index-function ()
-  "Make imenu use gtags."
+  "Make imenu use Global."
   (when buffer-file-name
     (global-xref--filter-find-symbol
      (lambda (name _code _file line)
-       (list name line #'global-xref--imenu-goto-function))
+       (list (format "%s:%s" line name) line #'global-xref--imenu-goto-function))
      '("--file")
      (file-name-nondirectory buffer-file-name))))
 
