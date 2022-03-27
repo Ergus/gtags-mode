@@ -226,7 +226,7 @@ any additional command line arguments to pass to GNU Global."
   (when buffer-file-name
     (global-xref--filter-find-symbol
      (lambda (name _code _file line)
-       (list (format "%s:%s" line name) line #'global-xref--imenu-goto-function))
+       (list name line #'global-xref--imenu-goto-function))
      '("--file")
      (file-name-nondirectory buffer-file-name))))
 
