@@ -115,14 +115,13 @@ Starts an asynchronous process and sets
 `global-xref--exec-async-sentinel' as the process sentinel if
 SENTINEL is 'nil' or not specified.  Returns the process
 handler."
-  (with-connection-local-variables
-   (when-let* ((cmd (symbol-value command))
-	       (process (apply #'start-file-process
-			       (format "%s-async" cmd)
-			       (generate-new-buffer " *temp*" t) cmd args))
-	       (sentinel (or sentinel #'global-xref--exec-async-sentinel)))
-     (set-process-sentinel process sentinel)
-     process)))
+  (when-let* ((cmd (symbol-value command))
+	      (process (apply #'start-file-process
+			      (format "%s-async" cmd)
+			      (generate-new-buffer " *temp*" t) cmd args))
+	      (sentinel (or sentinel #'global-xref--exec-async-sentinel)))
+    (set-process-sentinel process sentinel)
+    process))
 
 ;; Sync functions
 (defun global-xref--sync-sentinel ()
@@ -144,16 +143,15 @@ Starts a sync process; on success call SENTINEL or
 `global-xref--sync-sentinel' if SENTINEL is not specified or
 'nil'.  Returns the output of SENTINEL or nil if any error
 occurred."
-  (with-connection-local-variables
-   (when-let ((cmd (symbol-value command))
-	      (sentinel (or sentinel #'global-xref--sync-sentinel)))
-     (with-temp-buffer ;; When sync
-       (let ((status (apply #'process-file cmd nil (current-buffer) nil args)))
-	 (if (eq status 0)
-	     (funcall sentinel)
-	   (message "global error output:\n%s" (buffer-string))
-	   (error "Sync %s %s: exited abnormally with code %s" cmd args status)
-	   nil))))))
+  (when-let ((cmd (symbol-value command))
+	     (sentinel (or sentinel #'global-xref--sync-sentinel)))
+    (with-temp-buffer ;; When sync
+      (let ((status (apply #'process-file cmd nil (current-buffer) nil args)))
+	(if (eq status 0)
+	    (funcall sentinel)
+	  (message "global error output:\n%s" (buffer-string))
+	  (error "Sync %s %s: exited abnormally with code %s" cmd args status)
+	  nil)))))
 
 ;; Api functions
 (defun global-xref--find-root ()
