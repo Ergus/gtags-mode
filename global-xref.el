@@ -4,7 +4,7 @@
 
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/global-xref
-;; Keywords: xref, imenu, gtags, global
+;; Keywords: xref, project, imenu, gtags, global
 ;; Version: 1.0 alpha
 ;; Package-Requires: ((emacs "28"))
 
@@ -25,7 +25,7 @@
 
 ;;; Commentary:
 
-;; GNU Global integration with xref and imenu.
+;; GNU Global integration with xref, project and imenu.
 
 ;;; Code:
 
@@ -291,7 +291,7 @@ any additional command line arguments to pass to GNU Global."
     (mapcan (lambda (dir)
 	      (when (string-prefix-p root dir)
 		(global-xref--filter-find-symbol
-		 '("-a" "--path") (string-remove-prefix root dir)
+		 '("--path") (string-remove-prefix root dir)
 		 (lambda (_name _code file _line)
 		   (concat remote file)))))
 	    (or dirs (list root)))))
@@ -305,18 +305,18 @@ any additional command line arguments to pass to GNU Global."
    (global-xref-mode
     (global-xref--set-connection-locals)
     (setq global-xref--project-root (global-xref--find-root))
-    (add-hook 'find-file-hook #'global-xref--find-file-hook t)
+    (add-hook 'find-file-hook #'global-xref--find-file-hook)
+    (add-hook 'project-find-functions #'global-xref-project-backend)
     (add-hook 'xref-backend-functions #'global-xref-xref-backend nil t)
     (add-hook 'after-save-hook #'global-xref--after-save-hook nil t)
-    (add-hook 'project-find-functions #'global-xref-project-backend)
     (setq global-xref--imenu-default-function imenu-create-index-function)
     (setq imenu-create-index-function #'global-xref-imenu-create-index-function))
    (t
     (setq global-xref--project-root nil)
     (remove-hook 'find-file-hook #'global-xref--find-file-hook)
+    (remove-hook 'project-find-functions #'global-xref-project-backend)
     (remove-hook 'xref-backend-functions #'global-xref-xref-backend t)
     (remove-hook 'after-save-hook #'global-xref--after-save-hook t)
-    (remove-hook 'project-find-functions #'global-xref-project-backend)
     (setq imenu-create-index-function global-xref--imenu-default-function))))
 
 (provide 'global-xref)
