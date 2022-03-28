@@ -118,8 +118,10 @@ handler."
   (when-let* ((cmd (symbol-value command))
 	      (process (apply #'start-file-process
 			      (format "%s-async" cmd)
-			      (generate-new-buffer " *temp*" t) cmd args))
-	      (sentinel (or sentinel #'global-xref--exec-async-sentinel)))
+			      (generate-new-buffer " *temp*" t)
+			      cmd args))
+	      (sentinel (or sentinel
+			    #'global-xref--exec-async-sentinel)))
     (set-process-sentinel process sentinel)
     process))
 
@@ -156,7 +158,8 @@ occurred."
 ;; Api functions
 (defun global-xref--find-root ()
   "Return the GLOBAL project root.  Return nil if none."
-  (let ((root (car (global-xref--exec-sync 'global-xref--global '("--print-dbpath")))))
+  (let ((root (car (global-xref--exec-sync 'global-xref--global
+					   '("--print-dbpath")))))
     (when root
       (add-to-list 'global-xref--roots-list
 		   (concat (file-remote-p default-directory)
