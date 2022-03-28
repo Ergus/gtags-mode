@@ -183,7 +183,7 @@ name, code, file, line."
 	   (global-xref--exec-sync
 	    'global-xref--global
 	    (append args global-xref--output-format-options
-		    `(,(shell-quote-argument symbol)))))))
+		    (list (shell-quote-argument symbol)))))))
 
 ;; Interactive commands ==============================================
 (defun global-xref-create (root-dir)
@@ -263,7 +263,7 @@ any additional command line arguments to pass to GNU Global."
     (global-xref--filter-find-symbol
      '("--file") (file-name-nondirectory buffer-file-name)
      (lambda (name _code _file line)
-       `(,name ,line #'global-xref--imenu-goto-function)))))
+       (list name line #'global-xref--imenu-goto-function)))))
 
 ;;;###autoload
 (define-minor-mode global-xref-mode
