@@ -159,13 +159,12 @@ occurred."
 ;; Api functions
 (defun global-xref--find-root ()
   "Return the GLOBAL project root.  Return nil if none."
-  (let ((root (car (global-xref--exec-sync 'global-xref--global
-					   '("--print-dbpath")))))
-    (when root
-      (add-to-list 'global-xref--roots-list
-		   (concat (file-remote-p default-directory)
-			   (file-truename root)))
-      root)))
+  (when-let ((root (car (global-xref--exec-sync 'global-xref--global
+						'("--print-dbpath")))))
+    (setq root (concat (file-remote-p default-directory)
+		       (file-truename root)))
+    (add-to-list 'global-xref--roots-list root)
+    root))
 
 (defun global-xref--filter-find-symbol (args symbol creator)
   "Run `global-xref--exec-sync' with ARGS on SYMBOL and filter output with CREATOR.
@@ -184,7 +183,8 @@ name, code, file, line."
 	   (global-xref--exec-sync
 	    'global-xref--global
 	    (append args global-xref--output-format-options
-		    (list (shell-quote-argument symbol)))))))
+		    (unless (string-blank-p symbol)
+		      (list (shell-quote-argument symbol))))))))
 
 ;; Interactive commands ==============================================
 (defun global-xref-create (root-dir)
@@ -208,18 +208,22 @@ name, code, file, line."
      (list "--single-update"
 	   (file-name-nondirectory buffer-file-name)))))
 
+(defun global-xref--has-open-root (file)
+  "Check for a known prefix for FILE in `global-xref--roots-list'."
+  (let ((truename (file-truename file)))
+    (catch 'found
+      (mapc (lambda (root)
+	      (when (string-prefix-p root truename)
+		(throw 'found root)))
+	    global-xref--roots-list)
+      nil)))
+
 (defun global-xref--find-file-hook ()
   "Try to enable `global-xref' when opening a file.
 Check the roots and enable `global-xref' if the found-file is in
 one of them."
-  (let ((truename (file-truename buffer-file-name)))
-    (catch 'found
-      (mapc (lambda (x)
-	      (when (string-prefix-p x truename)
-		(global-xref-mode 1)
-		(throw 'found x)))
-	    global-xref--roots-list)
-      nil)))
+  (when (global-xref--has-open-root buffer-file-name)
+    (global-xref-mode 1)))
 
 ;; xref integration ==================================================
 (defun global-xref--find-symbol (args symbol)
@@ -268,6 +272,30 @@ any additional command line arguments to pass to GNU Global."
      (lambda (name _code _file line)
        (list name line #'global-xref--imenu-goto-function)))))
 
+;; project integration ===============================================
+(defun global-xref-project-backend (dir)
+  "Return the project for DIR as an array."
+  (when-let ((default-directory dir)
+	     (root (or (global-xref--has-open-root dir)
+		       (global-xref--find-root))))
+    (list 'global-xref root)))
+
+(cl-defmethod project-root ((project (head global-xref)))
+  "Root for PROJECT."
+  (cadr project))
+
+(cl-defmethod project-files ((project (head global-xref)) &optional dirs)
+  "Root for PROJECT."
+  (let* ((root (cadr project))
+	 (remote (file-remote-p root)))
+    (mapcan (lambda (dir)
+	      (when (string-prefix-p root dir)
+		(global-xref--filter-find-symbol
+		 '("-a" "--path") (string-remove-prefix root dir)
+		 (lambda (_name _code file _line)
+		   (concat remote file)))))
+	    (or dirs (list root)))))
+
 ;;;###autoload
 (define-minor-mode global-xref-mode
   "Use GNU Global as backend for several Emacs features in this buffer."
@@ -280,6 +308,7 @@ any additional command line arguments to pass to GNU Global."
     (add-hook 'find-file-hook #'global-xref--find-file-hook t)
     (add-hook 'xref-backend-functions #'global-xref-xref-backend nil t)
     (add-hook 'after-save-hook #'global-xref--after-save-hook nil t)
+    (add-hook 'project-find-functions #'global-xref-project-backend)
     (setq global-xref--imenu-default-function imenu-create-index-function)
     (setq imenu-create-index-function #'global-xref-imenu-create-index-function))
    (t
@@ -287,6 +316,7 @@ any additional command line arguments to pass to GNU Global."
     (remove-hook 'find-file-hook #'global-xref--find-file-hook)
     (remove-hook 'xref-backend-functions #'global-xref-xref-backend t)
     (remove-hook 'after-save-hook #'global-xref--after-save-hook t)
+    (remove-hook 'project-find-functions #'global-xref-project-backend)
     (setq imenu-create-index-function global-xref--imenu-default-function))))
 
 (provide 'global-xref)
