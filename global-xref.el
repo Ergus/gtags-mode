@@ -152,8 +152,8 @@ occurred."
       (let ((status (apply #'process-file cmd nil (current-buffer) nil args)))
 	(if (eq status 0)
 	    (funcall sentinel)
-	  (message "global error output:\n%s" (buffer-string))
-	  (error "Sync %s %s: exited abnormally with code %s" cmd args status)
+	  (message "Global error output:\n%s" (buffer-string))
+	  (message "Sync %s %s: exited abnormally with code %s" cmd args status)
 	  nil)))))
 
 ;; Api functions
