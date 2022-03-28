@@ -101,7 +101,8 @@ the address is relative on remote hosts.")
   "Sentinel to run when PROCESS emits EVENT.
 This is the sentinel set in `global-xref--exec-async'."
   (let ((temp-buffer (process-buffer process)))
-    (if (eq (process-status process) 'exit)
+    (if (and (eq (process-status process) 'exit)
+	     (eq (process-exit-status process) 0))
 	(and (buffer-name temp-buffer)
 	     (kill-buffer temp-buffer))
       (with-current-buffer temp-buffer
@@ -203,7 +204,9 @@ name, code, file, line."
   "After save hook to update GLOBAL database with changed data."
   (when (and buffer-file-name global-xref--project-root)
     (global-xref--exec-async
-     'global-xref--global `("--single-update" ,buffer-file-name))))
+     'global-xref--global
+     (list "--single-update"
+	   (file-name-nondirectory buffer-file-name)))))
 
 (defun global-xref--find-file-hook ()
   "Try to enable `global-xref' when opening a file.
