@@ -168,20 +168,19 @@ occurred."
 Returns the results as a list of CREATORS outputs similar to
 `mapcar'.  Creator should be a function with 4 input arguments:
 name, code, file, line."
-  (remove
-   nil
-   (mapcar
-    (lambda (line)
-      (when (string-match global-xref--output-format-regex line)
-	(funcall creator
-		 (match-string 1 line)   ;; name
-		 (match-string 4 line)   ;; code
-		 (match-string 3 line)   ;; file
-		 (string-to-number (match-string 2 line))))) ;; line
-    (global-xref--exec-sync
-     'global-xref--global
-     (append args global-xref--output-format-options
-	     `(,(shell-quote-argument symbol)))))))
+  (delete nil
+	  (mapcar
+	   (lambda (line)
+	     (when (string-match global-xref--output-format-regex line)
+	       (funcall creator
+			(match-string 1 line)   ;; name
+			(match-string 4 line)   ;; code
+			(match-string 3 line)   ;; file
+			(string-to-number (match-string 2 line))))) ;; line
+	   (global-xref--exec-sync
+	    'global-xref--global
+	    (append args global-xref--output-format-options
+		    `(,(shell-quote-argument symbol)))))))
 
 ;; Interactive commands ==============================================
 (defun global-xref-create (root-dir)
