@@ -112,15 +112,12 @@ This is the sentinel set in `global-xref--exec-async'."
 Starts an asynchronous process and sets
 `global-xref--exec-async-sentinel' as the process sentinel if
 SENTINEL is nil or not specified.  Returns the process object."
-  (when-let* ((cmd (symbol-value command))
-	      (process (apply #'start-file-process
-			      (format "%s-async" cmd)
-			      (generate-new-buffer " *temp*" t)
-			      cmd args))
-	      (sentinel (or sentinel
-			    #'global-xref--exec-async-sentinel)))
-    (set-process-sentinel process sentinel)
-    process))
+  (when-let ((cmd (symbol-value command)))
+    (make-process :name (format "%s-async" cmd)
+		  :buffer (generate-new-buffer " *temp*" t)
+		  :command (append (list cmd) args)
+		  :sentinel #'global-xref--exec-async-sentinel
+		  :file-handler t)))
 
 (defun global-xref--exec-sync (command args)
   "Run COMMAND with ARGS synchronously, on success call SENTINEL.
