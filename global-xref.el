@@ -122,31 +122,16 @@ SENTINEL is nil or not specified.  Returns the process object."
     (set-process-sentinel process sentinel)
     process))
 
-;; Sync functions
-(defun global-xref--sync-sentinel ()
-  "Return current buffer text as a list of strings."
-  (let (lines substring)
-    (goto-char (point-min))
-    (while (not (eobp))
-      (setq substring (buffer-substring-no-properties
-		       (line-beginning-position)
-		       (line-end-position)))
-      (unless (string-blank-p substring)
-	(push substring lines))
-      (forward-line 1))
-    (nreverse lines)))
-
-(defun global-xref--exec-sync (command args &optional sentinel)
+(defun global-xref--exec-sync (command args)
   "Run COMMAND with ARGS synchronously, on success call SENTINEL.
 Starts a sync process; on success call SENTINEL or
 `global-xref--sync-sentinel' if SENTINEL is not specified or nil.
 Returns the output of SENTINEL or nil if any error occurred."
-  (when-let ((cmd (symbol-value command))
-	     (sentinel (or sentinel #'global-xref--sync-sentinel)))
+  (when-let ((cmd (symbol-value command)))
     (with-temp-buffer ;; When sync
       (let ((status (apply #'process-file cmd nil (current-buffer) nil args)))
 	(if (eq status 0)
-	    (funcall sentinel)
+	    (string-lines (buffer-string) t)
 	  (message "Global error output:\n%s" (buffer-string))
 	  (message "Sync %s %s: exited abnormally with code %s" cmd args status)
 	  nil)))))
