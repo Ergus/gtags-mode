@@ -1,9 +1,9 @@
-;;; global-xref.el --- GNU Global integration with xref and imenu. -*- lexical-binding: t; -*-
+;;; gtags-xref.el --- GNU Global integration with xref, project and imenu. -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2022 Jimmy Aguilar Mena
 
 ;; Author: Jimmy Aguilar Mena
-;; URL: https://github.com/Ergus/global-xref
+;; URL: https://github.com/Ergus/gtags-xref
 ;; Keywords: xref, project, imenu, gtags, global
 ;; Version: 1.0 alpha
 ;; Package-Requires: ((emacs "28"))
@@ -31,72 +31,72 @@
 (require 'cl-generic)
 (require 'files-x)
 
-(defgroup global-xref nil
+(defgroup gtags-xref nil
   "GNU Global grup for xref."
   :group 'xref)
 
-(defcustom global-xref-global "global"
+(defcustom gtags-xref-global "global"
   "GNU Global executable."
   :type 'string
   :local t)
 
-(defcustom global-xref-gtags "gtags"
+(defcustom gtags-xref-gtags "gtags"
   "Gtags executable."
   :type 'string
   :local t)
 
-(defcustom global-xref-lighter "Global-Xref"
+(defcustom gtags-xref-lighter "Gtags-Xref"
   "Gtags executable."
   :type 'string
   :risky t)
 
-(defvar global-xref--roots-list nil
+(defvar gtags-xref--roots-list nil
   "Full list of Global roots.
 The address is absolute for remote hosts.")
-(put 'global-xref--roots-list 'risky-local-variable t)
+(put 'gtags-xref--roots-list 'risky-local-variable t)
 
-(defvar-local global-xref--global (executable-find global-xref-global))
-(defvar-local global-xref--gtags (executable-find global-xref-gtags))
-(defvar-local global-xref--project-root nil
+(defvar-local gtags-xref--global (executable-find gtags-xref-global))
+(defvar-local gtags-xref--gtags (executable-find gtags-xref-gtags))
+(defvar-local gtags-xref--project-root nil
   "Project Global root for this buffer.
 the address is relative on remote hosts.")
 
-(defconst global-xref--output-format-regex
+(defconst gtags-xref--output-format-regex
   "^\\([^[:blank:]]+\\)[[:blank:]]+\\([[:digit:]]+\\)[[:blank:]]+\\([^[:blank:]]+\\)[[:blank:]]+\\(.*\\)"
-  "Regex to filter the output with `global-xref--output-format-options'.")
+  "Regex to filter the output with `gtags-xref--output-format-options'.")
 
-(defconst global-xref--output-format-options
+(defconst gtags-xref--output-format-options
   '("--result=ctags-x" "--path-style=absolute")
-  "Command line options to use with `global-xref--output-format-regex'.")
+  "Command line options to use with `gtags-xref--output-format-regex'.")
 
 ;; Connection functions
-(defun global-xref--set-connection-locals ()
+(defun gtags-xref--set-connection-locals ()
   "Set GLOBAL connection local variables when possible and needed."
   (when-let* ((remote (file-remote-p default-directory))
 	      (criteria (connection-local-criteria-for-default-directory))
-	      ((not (and (local-variable-p 'global-xref--global)
-			 (local-variable-p 'global-xref--gtags))))
-	      (symvars (intern (concat "global-xref--" remote "-vars")))
+	      ((not (and (local-variable-p 'gtags-xref--global)
+			 (local-variable-p 'gtags-xref--gtags))))
+	      (symvars (intern (concat "gtags-xref--" remote "-vars")))
 	      (enable-connection-local-variables t))
     (unless (alist-get symvars connection-local-profile-alist)
       (with-connection-local-variables
-       (let ((xref-global (if (local-variable-p 'global-xref-global)
-			      global-xref-global
-			    (file-name-nondirectory global-xref-global)))
+       (let ((xref-global (if (local-variable-p 'gtags-xref-global)
+			      gtags-xref-global
+			    (file-name-nondirectory gtags-xref-global)))
 	     (xref-gtags (if (local-variable-p 'gtags-xref-global)
-			     global-xref-gtags
-			   (file-name-nondirectory global-xref-gtags))))
+			     gtags-xref-gtags
+			   (file-name-nondirectory gtags-xref-gtags))))
 	 (connection-local-set-profile-variables
 	  symvars
-	  `((global-xref--global . ,(executable-find xref-global t))
-	    (global-xref--gtags . ,(executable-find xref-gtags t))))
+	  `((gtags-xref--global . ,(executable-find xref-global t))
+	    (gtags-xref--gtags . ,(executable-find xref-gtags t))))
 	 (connection-local-set-profiles criteria symvars))))
     (hack-connection-local-variables-apply criteria)))
 
 ;; Async functions
-(defun global-xref--exec-async-sentinel (process event)
+(defun gtags-xref--exec-async-sentinel (process event)
   "Sentinel to run when PROCESS emits EVENT.
-This is the sentinel set in `global-xref--exec-async'."
+This is the sentinel set in `gtags-xref--exec-async'."
   (let ((temp-buffer (process-buffer process)))
     (if (and (eq (process-status process) 'exit)
 	     (eq (process-exit-status process) 0))
@@ -107,22 +107,22 @@ This is the sentinel set in `global-xref--exec-async'."
 	(message "Global error output:\n%s" (buffer-string)))))
   (message "Async %s: %s" (process-command process) event))
 
-(defun global-xref--exec-async (cmd args)
+(defun gtags-xref--exec-async (cmd args)
   "Run CMD with ARGS asynchronously and set SENTINEL to process.
 Starts an asynchronous process and sets
-`global-xref--exec-async-sentinel' as the process sentinel if
+`gtags-xref--exec-async-sentinel' as the process sentinel if
 SENTINEL is nil or not specified.  Returns the process object."
   (when cmd
     (make-process :name (format "%s-async" cmd)
 		  :buffer (generate-new-buffer " *temp*" t)
 		  :command (append (list cmd) args)
-		  :sentinel #'global-xref--exec-async-sentinel
+		  :sentinel #'gtags-xref--exec-async-sentinel
 		  :file-handler t)))
 
-(defun global-xref--exec-sync (cmd args)
+(defun gtags-xref--exec-sync (cmd args)
   "Run CMD with ARGS synchronously, on success call SENTINEL.
 Starts a sync process; on success call SENTINEL or
-`global-xref--sync-sentinel' if SENTINEL is not specified or nil.
+`gtags-xref--sync-sentinel' if SENTINEL is not specified or nil.
 Returns the output of SENTINEL or nil if any error occurred."
   (when cmd
     (with-temp-buffer ;; When sync
@@ -134,75 +134,75 @@ Returns the output of SENTINEL or nil if any error occurred."
 	  nil)))))
 
 ;; Api functions
-(defun global-xref--find-root ()
+(defun gtags-xref--find-root ()
   "Return the GLOBAL project root.  Return nil if none."
-  (when-let ((root (car (global-xref--exec-sync global-xref--global
+  (when-let ((root (car (gtags-xref--exec-sync gtags-xref--global
 						'("--print-dbpath")))))
     (setq root (concat (file-remote-p default-directory)
 		       (file-truename root)))
-    (add-to-list 'global-xref--roots-list root)
+    (add-to-list 'gtags-xref--roots-list root)
     root))
 
-(defun global-xref--filter-find-symbol (args symbol creator)
-  "Run `global-xref--exec-sync' with ARGS on SYMBOL and filter output with CREATOR.
+(defun gtags-xref--filter-find-symbol (args symbol creator)
+  "Run `gtags-xref--exec-sync' with ARGS on SYMBOL and filter output with CREATOR.
 Returns the results as a list of CREATORS outputs similar to
 `mapcar'.  Creator should be a function with 4 input arguments:
 name, code, file, line."
   (delete nil
 	  (mapcar
 	   (lambda (line)
-	     (when (string-match global-xref--output-format-regex line)
+	     (when (string-match gtags-xref--output-format-regex line)
 	       (funcall creator
 			(match-string 1 line)   ;; name
 			(match-string 4 line)   ;; code
 			(match-string 3 line)   ;; file
 			(string-to-number (match-string 2 line))))) ;; line
-	   (global-xref--exec-sync
-	    global-xref--global
-	    (append args global-xref--output-format-options
+	   (gtags-xref--exec-sync
+	    gtags-xref--global
+	    (append args gtags-xref--output-format-options
 		    (unless (string-blank-p symbol)
 		      (list (shell-quote-argument symbol))))))))
 
 ;; Interactive commands ==============================================
-(defun global-xref-create (root-dir)
+(defun gtags-xref-create (root-dir)
   "Create a GLOBAL GTAGS file in ROOT-DIR asynchronously."
   (interactive "DCreate db in directory: ")
   (let ((default-directory root-dir))
-    (global-xref--exec-async global-xref--gtags nil)))
+    (gtags-xref--exec-async gtags-xref--gtags nil)))
 
-(defun global-xref-update ()
+(defun gtags-xref-update ()
   "Update GLOBAL project database."
   (interactive)
-  (if global-xref--project-root
-      (global-xref--exec-async global-xref--global '("--update"))
+  (if gtags-xref--project-root
+      (gtags-xref--exec-async gtags-xref--global '("--update"))
     (error "Not under a GLOBAL project")))
 
-(defun global-xref--after-save-hook ()
+(defun gtags-xref--after-save-hook ()
   "After save hook to update GLOBAL database with changed data."
-  (when (and buffer-file-name global-xref--project-root)
-    (global-xref--exec-async
-     global-xref--global
+  (when (and buffer-file-name gtags-xref--project-root)
+    (gtags-xref--exec-async
+     gtags-xref--global
      (list "--single-update"
 	   (file-name-nondirectory buffer-file-name)))))
 
-(defun global-xref--has-open-root (file)
-  "Check for a known prefix for FILE in `global-xref--roots-list'."
+(defun gtags-xref--has-open-root (file)
+  "Check for a known prefix for FILE in `gtags-xref--roots-list'."
   (let ((truename (file-truename file)))
     (catch 'found
       (mapc (lambda (root)
 	      (when (string-prefix-p root truename)
 		(throw 'found root)))
-	    global-xref--roots-list)
+	    gtags-xref--roots-list)
       nil)))
 
-(defun global-xref--find-file-hook ()
-  "Try to enable `global-xref' when opening a file.
-Check the roots and enable `global-xref' if the found-file is in
+(defun gtags-xref--find-file-hook ()
+  "Try to enable `gtags-xref' when opening a file.
+Check the roots and enable `gtags-xref' if the found-file is in
 one of them."
-  (when (global-xref--has-open-root buffer-file-name)
-    (global-xref-mode 1)))
+  (when (gtags-xref--has-open-root buffer-file-name)
+    (gtags-xref-mode 1)))
 
-(defun global-xref--buffers-in-root (root)
+(defun gtags-xref--buffers-in-root (root)
   "Return a list of buffers which variable `buffer-file-name' is inside ROOT."
   (mapcan (lambda (buf)
 	    (when-let* ((bname (buffer-local-value 'buffer-file-name buf))
@@ -212,108 +212,108 @@ one of them."
 	  (buffer-list)))
 
 ;; xref integration ==================================================
-(defun global-xref--find-symbol (args symbol)
+(defun gtags-xref--find-symbol (args symbol)
   "Run GNU Global to create xref input list with ARGS on SYMBOL.
 Return the results as a list of xref location objects.  ARGS are
 any additional command line arguments to pass to GNU Global."
-  (global-xref--filter-find-symbol
+  (gtags-xref--filter-find-symbol
    args symbol
    (lambda (_name code file line)
      (xref-make code (xref-make-file-location
 		      (concat (file-remote-p default-directory) file)
 		      line 0)))))
 
-(defun global-xref-xref-backend ()
-  "Global-Xref backend for Xref."
-  (and global-xref--project-root 'global-xref))
+(defun gtags-xref-xref-backend ()
+  "Gtags-Xref backend for Xref."
+  (and gtags-xref--project-root 'gtags-xref))
 
-(cl-defmethod xref-backend-identifier-completion-table ((_backend (eql global-xref)))
+(cl-defmethod xref-backend-identifier-completion-table ((_backend (eql gtags-xref)))
   "List all symbols."
-  (global-xref--exec-sync global-xref--global '("--completion")))
+  (gtags-xref--exec-sync gtags-xref--global '("--completion")))
 
-(cl-defmethod xref-backend-definitions ((_backend (eql global-xref)) symbol)
+(cl-defmethod xref-backend-definitions ((_backend (eql gtags-xref)) symbol)
   "List all definitions for SYMBOL."
-  (global-xref--find-symbol '("--definition") symbol))
+  (gtags-xref--find-symbol '("--definition") symbol))
 
-(cl-defmethod xref-backend-references ((_backend (eql global-xref)) symbol)
+(cl-defmethod xref-backend-references ((_backend (eql gtags-xref)) symbol)
   "List all referenced for SYMBOL."
-  (global-xref--find-symbol '("--reference") symbol))
+  (gtags-xref--find-symbol '("--reference") symbol))
 
-(cl-defmethod xref-backend-apropos ((_backend (eql global-xref)) symbol)
+(cl-defmethod xref-backend-apropos ((_backend (eql gtags-xref)) symbol)
   "List grepped list of candidates SYMBOL."
-  (global-xref--find-symbol '("--grep") symbol))
+  (gtags-xref--find-symbol '("--grep") symbol))
 
 ;; imenu integration =================================================
-(defvar-local global-xref--imenu-default-function nil)
+(defvar-local gtags-xref--imenu-default-function nil)
 
-(defun global-xref--imenu-goto-function (_name line)
+(defun gtags-xref--imenu-goto-function (_name line)
   "Function to goto with imenu when LINE info."
   (funcall-interactively #'goto-line line))
 
-(defun global-xref-imenu-create-index-function ()
+(defun gtags-xref-imenu-create-index-function ()
   "Make imenu use Global."
   (when buffer-file-name
-    (global-xref--filter-find-symbol
+    (gtags-xref--filter-find-symbol
      '("--file") (file-name-nondirectory buffer-file-name)
      (lambda (name _code _file line)
-       (list name line #'global-xref--imenu-goto-function)))))
+       (list name line #'gtags-xref--imenu-goto-function)))))
 
 ;; project integration ===============================================
-(defun global-xref-project-backend (dir)
+(defun gtags-xref-project-backend (dir)
   "Return the project for DIR as an array."
-  (when-let ((root (global-xref--has-open-root dir)))
-    (list 'global-xref root)))
+  (when-let ((root (gtags-xref--has-open-root dir)))
+    (list 'gtags-xref root)))
 
-(cl-defmethod project-root ((project (head global-xref)))
+(cl-defmethod project-root ((project (head gtags-xref)))
   "Root for PROJECT."
   (cadr project))
 
-(cl-defmethod project-files ((project (head global-xref)) &optional dirs)
+(cl-defmethod project-files ((project (head gtags-xref)) &optional dirs)
   "Root for PROJECT."
   (let* ((root (project-root project))
 	 (remote (file-remote-p root)))
     (mapcan (lambda (dir)
 	      (when-let* ((tdir (file-truename dir))
 			  ((string-prefix-p root tdir)))
-		(global-xref--filter-find-symbol
+		(gtags-xref--filter-find-symbol
 		 '("--path") (string-remove-prefix root tdir)
 		 (lambda (_name _code file _line)
 		   (concat remote file)))))
 	    (or dirs (list root)))))
 
-(cl-defmethod project-buffers ((project (head global-xref)))
+(cl-defmethod project-buffers ((project (head gtags-xref)))
   "Return the list of all live buffers that belong to PROJECT."
-  (global-xref--buffers-in-root (project-root project)))
+  (gtags-xref--buffers-in-root (project-root project)))
 
 ;;;###autoload
-(define-minor-mode global-xref-mode
+(define-minor-mode gtags-xref-mode
   "Use GNU Global as backend for several Emacs features in this buffer."
   :global nil
-  :lighter global-xref-lighter
+  :lighter gtags-xref-lighter
   (cond
-   (global-xref-mode
-    (global-xref--set-connection-locals)
-    (setq global-xref--project-root (global-xref--find-root))
-    (add-hook 'find-file-hook #'global-xref--find-file-hook)
-    (add-hook 'project-find-functions #'global-xref-project-backend)
-    (add-hook 'xref-backend-functions #'global-xref-xref-backend nil t)
-    (add-hook 'after-save-hook #'global-xref--after-save-hook nil t)
-    (setq global-xref--imenu-default-function imenu-create-index-function)
-    (setq imenu-create-index-function #'global-xref-imenu-create-index-function)
-    ;; Enable the mode in all the files inside `global-xref--project-root'
+   (gtags-xref-mode
+    (gtags-xref--set-connection-locals)
+    (setq gtags-xref--project-root (gtags-xref--find-root))
+    (add-hook 'find-file-hook #'gtags-xref--find-file-hook)
+    (add-hook 'project-find-functions #'gtags-xref-project-backend)
+    (add-hook 'xref-backend-functions #'gtags-xref-xref-backend nil t)
+    (add-hook 'after-save-hook #'gtags-xref--after-save-hook nil t)
+    (setq gtags-xref--imenu-default-function imenu-create-index-function)
+    (setq imenu-create-index-function #'gtags-xref-imenu-create-index-function)
+    ;; Enable the mode in all the files inside `gtags-xref--project-root'
     (when (called-interactively-p 'all)
       (mapc (lambda (buff)
-	      (unless (buffer-local-value 'global-xref-mode buff)
+	      (unless (buffer-local-value 'gtags-xref-mode buff)
 		(with-current-buffer buff
-		  (global-xref-mode 1))))
-	    (global-xref--buffers-in-root global-xref--project-root))))
+		  (gtags-xref-mode 1))))
+	    (gtags-xref--buffers-in-root gtags-xref--project-root))))
    (t
-    (setq global-xref--project-root nil)
-    (remove-hook 'find-file-hook #'global-xref--find-file-hook)
-    (remove-hook 'project-find-functions #'global-xref-project-backend)
-    (remove-hook 'xref-backend-functions #'global-xref-xref-backend t)
-    (remove-hook 'after-save-hook #'global-xref--after-save-hook t)
-    (setq imenu-create-index-function global-xref--imenu-default-function))))
+    (setq gtags-xref--project-root nil)
+    (remove-hook 'find-file-hook #'gtags-xref--find-file-hook)
+    (remove-hook 'project-find-functions #'gtags-xref-project-backend)
+    (remove-hook 'xref-backend-functions #'gtags-xref-xref-backend t)
+    (remove-hook 'after-save-hook #'gtags-xref--after-save-hook t)
+    (setq imenu-create-index-function gtags-xref--imenu-default-function))))
 
-(provide 'global-xref)
-;;; global-xref.el ends here
+(provide 'gtags-xref)
+;;; gtags-xref-mode.el ends here
