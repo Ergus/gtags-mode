@@ -293,15 +293,20 @@ any additional command line arguments to pass to GNU Global."
 
 (cl-defmethod project-files ((project (head global-xref)) &optional dirs)
   "Root for PROJECT."
-  (let* ((root (cadr project))
+  (let* ((root (project-root project))
 	 (remote (file-remote-p root)))
     (mapcan (lambda (dir)
-	      (when (string-prefix-p root dir)
+	      (when-let* ((tdir (file-truename dir))
+			  ((string-prefix-p root tdir)))
 		(global-xref--filter-find-symbol
-		 '("--path") (string-remove-prefix root dir)
+		 '("--path") (string-remove-prefix root tdir)
 		 (lambda (_name _code file _line)
 		   (concat remote file)))))
 	    (or dirs (list root)))))
+
+(cl-defmethod project-buffers ((project (head global-xref)))
+  "Return the list of all live buffers that belong to PROJECT."
+  (global-xref--buffers-in-root (project-root project)))
 
 ;;;###autoload
 (define-minor-mode global-xref-mode
