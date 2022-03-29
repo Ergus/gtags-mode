@@ -225,6 +225,15 @@ one of them."
   (when (global-xref--has-open-root buffer-file-name)
     (global-xref-mode 1)))
 
+(defun global-xref--buffers-in-root (root)
+  "Return a list of buffers which variable `buffer-file-name' is inside ROOT."
+  (mapcan (lambda (buf)
+	    (when-let* ((bname (buffer-local-value 'buffer-file-name buf))
+			(tname (file-truename bname))
+			((string-prefix-p root tname)))
+	      (list buf)))
+	  (buffer-list)))
+
 ;; xref integration ==================================================
 (defun global-xref--find-symbol (args symbol)
   "Run GNU Global to create xref input list with ARGS on SYMBOL.
