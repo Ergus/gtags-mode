@@ -284,9 +284,7 @@ any additional command line arguments to pass to GNU Global."
 ;; project integration ===============================================
 (defun global-xref-project-backend (dir)
   "Return the project for DIR as an array."
-  (when-let ((default-directory dir)
-	     (root (or (global-xref--has-open-root dir)
-		       (global-xref--find-root))))
+  (when-let ((root (global-xref--has-open-root dir)))
     (list 'global-xref root)))
 
 (cl-defmethod project-root ((project (head global-xref)))
