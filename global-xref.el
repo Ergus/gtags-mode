@@ -8,8 +8,6 @@
 ;; Version: 1.0 alpha
 ;; Package-Requires: ((emacs "28"))
 
-;; Copyright (C) 2022  Jimmy Aguilar Mena
-
 ;; This program is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation, either version 3 of the License, or
@@ -53,8 +51,8 @@
   :risky t)
 
 (defvar global-xref--roots-list nil
-  "Full list of project Global root.
-The address is absolute on remote hsts.")
+  "Full list of Global roots.
+The address is absolute for remote hosts.")
 (put 'global-xref--roots-list 'risky-local-variable t)
 
 (defvar-local global-xref--global (executable-find global-xref-global))
@@ -64,7 +62,7 @@ The address is absolute on remote hsts.")
 the address is relative on remote hosts.")
 
 (defconst global-xref--output-format-regex
-  "^\\([^ \t]+\\)[ \t]+\\([0-9]+\\)[ \t]+\\([^ \t\]+\\)[ \t]+\\(.*\\)"
+  "^\\([^[:blank:]]+\\)[[:blank:]]+\\([[:digit:]]+\\)[[:blank:]]+\\([^[:blank:]]+\\)[[:blank:]]+\\(.*\\)"
   "Regex to filter the output with `global-xref--output-format-options'.")
 
 (defconst global-xref--output-format-options
@@ -74,15 +72,15 @@ the address is relative on remote hosts.")
 ;; Connection functions
 (defun global-xref--set-connection-locals ()
   "Set GLOBAL connection local variables when possible and needed."
-  (when-let* ((host (file-remote-p default-directory 'host))
+  (when-let* ((remote (file-remote-p default-directory))
+	      (criteria (connection-local-criteria-for-default-directory))
 	      ((not (and (local-variable-p 'global-xref--global)
 			 (local-variable-p 'global-xref--gtags))))
-	      (symvars (intern (concat "global-xref--" host "-vars")))
+	      (symvars (intern (concat "global-xref--" remote "-vars")))
 	      (enable-connection-local-variables t))
     (unless (alist-get symvars connection-local-profile-alist)
       (with-connection-local-variables
-       (let ((criteria `(:machine ,host))
-	     (xref-global (if (local-variable-p 'global-xref-global)
+       (let ((xref-global (if (local-variable-p 'global-xref-global)
 			      global-xref-global
 			    (file-name-nondirectory global-xref-global)))
 	     (xref-gtags (if (local-variable-p 'gtags-xref-global)
@@ -93,8 +91,7 @@ the address is relative on remote hosts.")
 	  `((global-xref--global . ,(executable-find xref-global t))
 	    (global-xref--gtags . ,(executable-find xref-gtags t))))
 	 (connection-local-set-profiles criteria symvars))))
-    (hack-connection-local-variables-apply
-     (connection-local-criteria-for-default-directory))))
+    (hack-connection-local-variables-apply criteria)))
 
 ;; Async functions
 (defun global-xref--exec-async-sentinel (process event)
@@ -114,8 +111,7 @@ This is the sentinel set in `global-xref--exec-async'."
   "Run COMMAND with ARGS asynchronously and set SENTINEL to process.
 Starts an asynchronous process and sets
 `global-xref--exec-async-sentinel' as the process sentinel if
-SENTINEL is 'nil' or not specified.  Returns the process
-handler."
+SENTINEL is nil or not specified.  Returns the process object."
   (when-let* ((cmd (symbol-value command))
 	      (process (apply #'start-file-process
 			      (format "%s-async" cmd)
@@ -143,9 +139,8 @@ handler."
 (defun global-xref--exec-sync (command args &optional sentinel)
   "Run COMMAND with ARGS synchronously, on success call SENTINEL.
 Starts a sync process; on success call SENTINEL or
-`global-xref--sync-sentinel' if SENTINEL is not specified or
-'nil'.  Returns the output of SENTINEL or nil if any error
-occurred."
+`global-xref--sync-sentinel' if SENTINEL is not specified or nil.
+Returns the output of SENTINEL or nil if any error occurred."
   (when-let ((cmd (symbol-value command))
 	     (sentinel (or sentinel #'global-xref--sync-sentinel)))
     (with-temp-buffer ;; When sync
