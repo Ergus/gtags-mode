@@ -322,7 +322,14 @@ any additional command line arguments to pass to GNU Global."
     (add-hook 'xref-backend-functions #'global-xref-xref-backend nil t)
     (add-hook 'after-save-hook #'global-xref--after-save-hook nil t)
     (setq global-xref--imenu-default-function imenu-create-index-function)
-    (setq imenu-create-index-function #'global-xref-imenu-create-index-function))
+    (setq imenu-create-index-function #'global-xref-imenu-create-index-function)
+    ;; Enable the mode in all the files inside `global-xref--project-root'
+    (when (called-interactively-p 'all)
+      (mapc (lambda (buff)
+	      (with-current-buffer buff
+		(unless global-xref-mode
+		  (global-xref-mode 1))))
+	    (global-xref--buffers-in-root global-xref--project-root))))
    (t
     (setq global-xref--project-root nil)
     (remove-hook 'find-file-hook #'global-xref--find-file-hook)
