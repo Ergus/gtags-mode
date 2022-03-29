@@ -107,24 +107,24 @@ This is the sentinel set in `global-xref--exec-async'."
 	(message "Global error output:\n%s" (buffer-string)))))
   (message "Async %s: %s" (process-command process) event))
 
-(defun global-xref--exec-async (command args &optional sentinel)
-  "Run COMMAND with ARGS asynchronously and set SENTINEL to process.
+(defun global-xref--exec-async (cmd args)
+  "Run CMD with ARGS asynchronously and set SENTINEL to process.
 Starts an asynchronous process and sets
 `global-xref--exec-async-sentinel' as the process sentinel if
 SENTINEL is nil or not specified.  Returns the process object."
-  (when-let ((cmd (symbol-value command)))
+  (when cmd
     (make-process :name (format "%s-async" cmd)
 		  :buffer (generate-new-buffer " *temp*" t)
 		  :command (append (list cmd) args)
 		  :sentinel #'global-xref--exec-async-sentinel
 		  :file-handler t)))
 
-(defun global-xref--exec-sync (command args)
-  "Run COMMAND with ARGS synchronously, on success call SENTINEL.
+(defun global-xref--exec-sync (cmd args)
+  "Run CMD with ARGS synchronously, on success call SENTINEL.
 Starts a sync process; on success call SENTINEL or
 `global-xref--sync-sentinel' if SENTINEL is not specified or nil.
 Returns the output of SENTINEL or nil if any error occurred."
-  (when-let ((cmd (symbol-value command)))
+  (when cmd
     (with-temp-buffer ;; When sync
       (let ((status (apply #'process-file cmd nil (current-buffer) nil args)))
 	(if (eq status 0)
@@ -136,7 +136,7 @@ Returns the output of SENTINEL or nil if any error occurred."
 ;; Api functions
 (defun global-xref--find-root ()
   "Return the GLOBAL project root.  Return nil if none."
-  (when-let ((root (car (global-xref--exec-sync 'global-xref--global
+  (when-let ((root (car (global-xref--exec-sync global-xref--global
 						'("--print-dbpath")))))
     (setq root (concat (file-remote-p default-directory)
 		       (file-truename root)))
@@ -158,7 +158,7 @@ name, code, file, line."
 			(match-string 3 line)   ;; file
 			(string-to-number (match-string 2 line))))) ;; line
 	   (global-xref--exec-sync
-	    'global-xref--global
+	    global-xref--global
 	    (append args global-xref--output-format-options
 		    (unless (string-blank-p symbol)
 		      (list (shell-quote-argument symbol))))))))
@@ -168,20 +168,20 @@ name, code, file, line."
   "Create a GLOBAL GTAGS file in ROOT-DIR asynchronously."
   (interactive "DCreate db in directory: ")
   (let ((default-directory root-dir))
-    (global-xref--exec-async 'global-xref--gtags nil)))
+    (global-xref--exec-async global-xref--gtags nil)))
 
 (defun global-xref-update ()
   "Update GLOBAL project database."
   (interactive)
   (if global-xref--project-root
-      (global-xref--exec-async 'global-xref--global '("--update"))
+      (global-xref--exec-async global-xref--global '("--update"))
     (error "Not under a GLOBAL project")))
 
 (defun global-xref--after-save-hook ()
   "After save hook to update GLOBAL database with changed data."
   (when (and buffer-file-name global-xref--project-root)
     (global-xref--exec-async
-     'global-xref--global
+     global-xref--global
      (list "--single-update"
 	   (file-name-nondirectory buffer-file-name)))))
 
@@ -229,7 +229,7 @@ any additional command line arguments to pass to GNU Global."
 
 (cl-defmethod xref-backend-identifier-completion-table ((_backend (eql global-xref)))
   "List all symbols."
-  (global-xref--exec-sync 'global-xref--global '("--completion")))
+  (global-xref--exec-sync global-xref--global '("--completion")))
 
 (cl-defmethod xref-backend-definitions ((_backend (eql global-xref)) symbol)
   "List all definitions for SYMBOL."
