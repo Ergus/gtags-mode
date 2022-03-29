@@ -306,8 +306,8 @@ any additional command line arguments to pass to GNU Global."
     ;; Enable the mode in all the files inside `global-xref--project-root'
     (when (called-interactively-p 'all)
       (mapc (lambda (buff)
-	      (with-current-buffer buff
-		(unless global-xref-mode
+	      (unless (buffer-local-value 'global-xref-mode buff)
+		(with-current-buffer buff
 		  (global-xref-mode 1))))
 	    (global-xref--buffers-in-root global-xref--project-root))))
    (t
