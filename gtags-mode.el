@@ -114,9 +114,9 @@ This is the sentinel set in `gtags-mode--exec-async'."
 
 (defun gtags-mode--exec-async (cmd args)
   "Run CMD with ARGS asynchronously and set SENTINEL to process.
-Starts an asynchronous process and sets
-`gtags-mode--exec-async-sentinel' as the process sentinel if
-SENTINEL is nil or not specified.  Returns the process object."
+Start an asynchronous process and sets
+`gtags-mode--exec-async-sentinel' as the process sentinel.
+Returns the process object."
   (when cmd
     (let ((pr (make-process :name (format "%s-async" cmd)
 			    :buffer (generate-new-buffer " *temp*" t)
@@ -127,17 +127,15 @@ SENTINEL is nil or not specified.  Returns the process object."
       pr)))
 
 (defun gtags-mode--exec-sync (args)
-  "Run CMD with ARGS synchronously, on success call SENTINEL.
-Starts a sync process; on success call SENTINEL or
-`gtags-mode--sync-sentinel' if SENTINEL is not specified or nil.
-Returns the output of SENTINEL or nil if any error occurred."
-  (when cmd
-    (with-temp-buffer ;; When sync
-      (let ((status (apply #'process-file gtags-mode--global nil (current-buffer) nil args)))
+  "Run global with ARGS synchronously.
+On success return a list of strings or nil if any error occurred."
+  (when-let ((global gtags-mode--global))
+    (with-temp-buffer
+      (let ((status (apply #'process-file global nil (current-buffer) nil args)))
 	(if (eq status 0)
 	    (string-lines (buffer-string) t)
 	  (message "Global error output:\n%s" (buffer-string))
-	  (message "Sync %s %s: exited abnormally with code %s" cmd args status)
+	  (message "Sync global %s: exited abnormally with code %s" args status)
 	  nil)))))
 
 ;; Utilities functions (a bit less low level) ========================
@@ -179,12 +177,13 @@ completions usually from the cache when possible."
 
 (defun gtags-mode--buffers-in-root (root)
   "Return a list of buffers which variable `buffer-file-name' is inside ROOT."
-  (mapcan (lambda (buf)
-	    (when-let* ((bname (buffer-local-value 'buffer-file-name buf))
-			(tname (file-truename bname))
-			((string-prefix-p root tname)))
-	      (list buf)))
-	  (buffer-list)))
+  (when root
+    (mapcan (lambda (buf)
+	      (when-let* ((bname (buffer-local-value 'buffer-file-name buf))
+			  (tname (file-truename bname))
+			  ((string-prefix-p root tname)))
+		(list buf)))
+	    (buffer-list))))
 
 (defun gtags-mode--filter-find-symbol (args symbol creator)
   "Run `gtags-mode--exec-sync' with ARGS on SYMBOL and filter output with CREATOR.
@@ -230,7 +229,7 @@ name, code, file, line."
 
 (defun gtags-mode--find-file-hook ()
   "Try to enable `gtags' when opening a file.
-Check the roots and enable `gtags' if the found-file is in
+Check the roots list and enable `gtags' if the open file is in
 one of them."
   (when (gtags-mode--get-plist buffer-file-name #'identity)
     (gtags-mode 1)))
@@ -238,8 +237,7 @@ one of them."
 ;; xref integration ==================================================
 (defun gtags-mode--xref-find-symbol (args symbol)
   "Run GNU Global to create xref input list with ARGS on SYMBOL.
-Return the results as a list of xref location objects.  ARGS are
-any additional command line arguments to pass to GNU Global."
+Return as a list of xref location objects."
   (gtags-mode--filter-find-symbol
    args symbol
    (lambda (_name code file line)
