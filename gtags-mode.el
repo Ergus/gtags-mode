@@ -55,16 +55,6 @@
 The address is absolute for remote hosts.")
 (put 'gtags-mode--alist 'risky-local-variable t)
 
-(defun gtags-mode--get-plist (file action)
-  "Apply ACTION on a plist with known prefix FILE from `gtags-mode--alist'."
-  (let ((truename (file-truename file)))
-    (catch 'found
-      (mapc (lambda (plist)
-	      (when (string-prefix-p (plist-get plist :root) truename)
-		(throw 'found (funcall action plist))))
-	    gtags-mode--alist)
-      nil)))
-
 (defvar-local gtags-mode--global (executable-find gtags-mode-global-executable))
 (defvar-local gtags-mode--gtags (executable-find gtags-mode-gtags-executable))
 (defvar-local gtags-mode--root nil
@@ -136,25 +126,34 @@ SENTINEL is nil or not specified.  Returns the process object."
       (process-put pr :buffer (current-buffer))
       pr)))
 
-(defun gtags-mode--exec-sync (cmd args)
+(defun gtags-mode--exec-sync (args)
   "Run CMD with ARGS synchronously, on success call SENTINEL.
 Starts a sync process; on success call SENTINEL or
 `gtags-mode--sync-sentinel' if SENTINEL is not specified or nil.
 Returns the output of SENTINEL or nil if any error occurred."
   (when cmd
     (with-temp-buffer ;; When sync
-      (let ((status (apply #'process-file cmd nil (current-buffer) nil args)))
+      (let ((status (apply #'process-file gtags-mode--global nil (current-buffer) nil args)))
 	(if (eq status 0)
 	    (string-lines (buffer-string) t)
 	  (message "Global error output:\n%s" (buffer-string))
 	  (message "Sync %s %s: exited abnormally with code %s" cmd args status)
 	  nil)))))
 
-;; Api functions
+;; Utilities functions (a bit less low level) ========================
+(defun gtags-mode--get-plist (file action)
+  "Apply ACTION on a plist with known prefix FILE from `gtags-mode--alist'."
+  (let ((truename (file-truename file)))
+    (catch 'found
+      (mapc (lambda (plist)
+	      (when (string-prefix-p (plist-get plist :root) truename)
+		(throw 'found (funcall action plist))))
+	    gtags-mode--alist)
+      nil)))
+
 (defun gtags-mode--find-root ()
   "Return the GLOBAL project root.  Return nil if none."
-  (when-let ((root (car (gtags-mode--exec-sync gtags-mode--global
-					       '("--print-dbpath")))))
+  (when-let ((root (car (gtags-mode--exec-sync '("--print-dbpath")))))
     (setq root (concat (file-remote-p default-directory)
 		       (file-truename root)))
     (add-to-list 'gtags-mode--alist `(:root ,root :cache nil)
@@ -165,19 +164,28 @@ Returns the output of SENTINEL or nil if any error occurred."
 (defun gtags-mode--list-completions (prefix)
   "Get the list of completions for PREFIX.
 When PREFIX is nil or empty; return the entire list of
-completions usually from the cache."
-  (cond
-   ((and (stringp prefix) (not (string-blank-p prefix)))
-    (gtags-mode--exec-sync gtags-mode--global
-			   (append '("--ignore-case" "--completion")
-				   `(,(shell-quote-argument prefix)))))
-   ((plist-get (gtags-mode--get-plist gtags-mode--root #'identity) :cache))
-   (t (gtags-mode--get-plist
-       gtags-mode--root
-       (lambda (plist)
-	 (plist-put plist
-		    :cache (gtags-mode--exec-sync gtags-mode--global '("--completion")))
-	 plist)))))
+completions usually from the cache when possible."
+  (if (and (stringp prefix) (not (string-blank-p prefix))) ;; not use cache
+      (gtags-mode--exec-sync (append '("--ignore-case" "--completion")
+				     `(,(shell-quote-argument prefix))))
+    (gtags-mode--get-plist
+     gtags-mode--root
+     (lambda (plist)    ;; set and return the cache
+       (let* ((cache (plist-get plist :cache))
+	      (completions (or cache
+			       (gtags-mode--exec-sync '("--completion")))))
+	 (unless cache
+	   (plist-put plist :cache completions))
+	 completions)))))
+
+(defun gtags-mode--buffers-in-root (root)
+  "Return a list of buffers which variable `buffer-file-name' is inside ROOT."
+  (mapcan (lambda (buf)
+	    (when-let* ((bname (buffer-local-value 'buffer-file-name buf))
+			(tname (file-truename bname))
+			((string-prefix-p root tname)))
+	      (list buf)))
+	  (buffer-list)))
 
 (defun gtags-mode--filter-find-symbol (args symbol creator)
   "Run `gtags-mode--exec-sync' with ARGS on SYMBOL and filter output with CREATOR.
@@ -194,7 +202,6 @@ name, code, file, line."
 			(match-string 3 line)   ;; file
 			(string-to-number (match-string 2 line))))) ;; line
 	   (gtags-mode--exec-sync
-	    gtags-mode--global
 	    (append args gtags-mode--output-format-options
 		    (unless (string-blank-p symbol)
 		      (list (shell-quote-argument symbol))))))))
@@ -213,6 +220,7 @@ name, code, file, line."
       (gtags-mode--exec-async gtags-mode--global '("--update"))
     (error "Not under a GLOBAL project")))
 
+;; Hooks =============================================================
 (defun gtags-mode--after-save-hook ()
   "After save hook to update GLOBAL database with changed data."
   (when (and buffer-file-name gtags-mode--root)
@@ -227,15 +235,6 @@ Check the roots and enable `gtags' if the found-file is in
 one of them."
   (when (gtags-mode--get-plist buffer-file-name #'identity)
     (gtags-mode 1)))
-
-(defun gtags-mode--buffers-in-root (root)
-  "Return a list of buffers which variable `buffer-file-name' is inside ROOT."
-  (mapcan (lambda (buf)
-	    (when-let* ((bname (buffer-local-value 'buffer-file-name buf))
-			(tname (file-truename bname))
-			((string-prefix-p root tname)))
-	      (list buf)))
-	  (buffer-list)))
 
 ;; xref integration ==================================================
 (defun gtags-mode--xref-find-symbol (args symbol)
@@ -313,7 +312,7 @@ any additional command line arguments to pass to GNU Global."
   "Return the list of all live buffers that belong to PROJECT."
   (gtags-mode--buffers-in-root (project-root project)))
 
-;; Completion at-point
+;; Completion-at-point-function (capf) ===============================
 (defun gtags-mode-completion-function ()
   "Generate completion list."
   (when-let (bounds (bounds-of-thing-at-point 'symbol))
