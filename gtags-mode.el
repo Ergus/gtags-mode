@@ -171,12 +171,11 @@ completions usually from the cache when possible."
     (gtags-mode--get-plist
      gtags-mode--root
      (lambda (plist)    ;; set and return the cache
-       (let* ((cache (plist-get plist :cache))
-	      (completions (or cache
-			       (gtags-mode--exec-sync '("--completion")))))
-	 (unless cache
-	   (plist-put plist :cache completions))
-	 completions)))))
+       (if-let ((cache (plist-get plist :cache)))
+	   cache
+	 (setq cache (gtags-mode--exec-sync '("--completion")))
+	 (plist-put plist :cache cache)
+	 cache)))))
 
 (defun gtags-mode--buffers-in-root (root)
   "Return a list of buffers which variable `buffer-file-name' is inside ROOT."
