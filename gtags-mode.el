@@ -317,25 +317,29 @@ Return as a list of xref location objects."
   (cond
    (gtags-mode
     (gtags-mode--set-connection-locals)
-    (setq gtags-mode--root (gtags-mode--find-root))
-    (add-hook 'find-file-hook #'gtags-mode--find-file-hook)
-    (add-hook 'project-find-functions #'gtags-mode-project-backend)
-    (add-hook 'xref-backend-functions #'gtags-xref-backend nil t)
-    (add-hook 'after-save-hook #'gtags-mode--after-save-hook nil t)
-    (add-hook 'completion-at-point-functions #'gtags-mode-completion-function nil t)
-    (setq gtags-mode--imenu-default-function imenu-create-index-function)
-    (setq imenu-create-index-function #'gtags-mode-imenu-create-index-function)
-    ;; Enable the mode in all the files inside `gtags-mode--root'
-    (when (called-interactively-p 'all)
-      (mapc (lambda (buff)
-	      (unless (buffer-local-value 'gtags-mode buff)
-		(with-current-buffer buff
-		  (gtags-mode 1))))
-	    (gtags-mode--buffers-in-root gtags-mode--root))))
+    (if (setq gtags-mode--plist (gtags-mode--find-or-create-plist))
+	(progn
+	  (add-hook 'find-file-hook #'gtags-mode--find-file-hook)
+	  (add-hook 'project-find-functions #'gtags-mode-project-backend)
+	  (add-hook 'xref-backend-functions #'gtags-xref-backend nil t)
+	  (add-hook 'after-save-hook #'gtags-mode--after-save-hook nil t)
+	  (add-hook 'completion-at-point-functions #'gtags-mode-completion-function nil t)
+	  (setq gtags-mode--imenu-default-function imenu-create-index-function)
+	  (setq imenu-create-index-function #'gtags-mode-imenu-create-index-function)
+	  ;; Enable the mode in all the files inside `gtags-mode--plist'
+	  (when (called-interactively-p 'all)
+	    (mapc (lambda (buff)
+		    (unless (buffer-local-value 'gtags-mode buff)
+		      (with-current-buffer buff
+			(gtags-mode 1))))
+		  (gtags-mode--buffers-in-root gtags-mode--plist))))
+      (when (called-interactively-p 'all)
+	(message "Couldn't enable gtags-mode. Not root found."))
+      (setq gtags-mode -1)))
    (t
-    (setq gtags-mode--root nil)
-    (remove-hook 'find-file-hook #'gtags-mode--find-file-hook)
-    (remove-hook 'project-find-functions #'gtags-mode-project-backend)
+    (setq gtags-mode--plist nil)
+    ;; (remove-hook 'find-file-hook #'gtags-mode--find-file-hook)
+    ;; (remove-hook 'project-find-functions #'gtags-mode-project-backend)
     (remove-hook 'xref-backend-functions #'gtags-xref-backend t)
     (remove-hook 'after-save-hook #'gtags-mode--after-save-hook t)
     (remove-hook 'completion-at-point-functions #'gtags-mode-completion-function t)
