@@ -98,8 +98,7 @@ The address is relative on remote hosts and includes the remote prefix.")
   "Sentinel to run when PROCESS emits EVENT.
 This is the sentinel set in `gtags-mode--exec-async'."
   (let ((temp-buffer (process-buffer process))
-	(parent-buffer (process-get process :buffer))
-	(command (process-get process :command)))
+	(parent-buffer (process-get process :buffer)))
     (if (and (eq (process-status process) 'exit)   ;; if success
 	     (eq (process-exit-status process) 0))
 	(and (buffer-name temp-buffer)             ;; kill temp buffer
@@ -111,7 +110,7 @@ This is the sentinel set in `gtags-mode--exec-async'."
       (with-current-buffer parent-buffer
 	(plist-put gtags-mode--plist :cache nil)))
     ;; TODO: use `remote-command' in the future, it will be on emacs 29.1
-    (message "Async %s: %s" command event))) ;; Notify
+    (message "Async %s: %s" (process-get process :command) event))) ;; Notify
 
 (defsubst gtags-mode--quote (args symbol)
   "Pre-process ARGS and quote SYMBOL."
@@ -130,8 +129,8 @@ Returns the process object."
 			     :command command
 			     :sentinel #'gtags-mode--exec-async-sentinel
 			     :file-handler t)))
-      (process-put pr :buffer (current-buffer))
-      (process-put pr :command command) ;; In future not needed with `remote-commands'.
+      ;; In future not needed with `remote-commands'.
+      (set-process-plist pr `(:buffer ,(current-buffer) :command ,command))
       pr)))
 
 (defun gtags-mode--exec-sync (args &optional target)
