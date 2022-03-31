@@ -174,8 +174,8 @@ completions usually from the cache when possible."
    ((and (stringp prefix) (not (string-blank-p prefix))
 	 (gtags-mode--exec-sync '("--ignore-case" "--completion") prefix)))
    ((plist-get gtags-mode--plist :cache))
-   ((plist-put gtags-mode--plist :cache (gtags-mode--exec-sync '("--completion")))
-    (plist-get gtags-mode--plist :cache))))
+   (t (plist-put gtags-mode--plist :cache (gtags-mode--exec-sync '("--completion")))
+      (plist-get gtags-mode--plist :cache))))
 
 (defun gtags-mode--buffers-in-root (plist)
   "Return a list of buffers which variable `buffer-file-name' is inside PLIST."
