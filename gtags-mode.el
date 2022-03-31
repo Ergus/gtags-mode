@@ -98,7 +98,8 @@ The address is relative on remote hosts and includes the remote prefix.")
   "Sentinel to run when PROCESS emits EVENT.
 This is the sentinel set in `gtags-mode--exec-async'."
   (let ((temp-buffer (process-buffer process))
-	(parent-buffer (process-get process :buffer)))
+	(parent-buffer (process-get process :buffer))
+	(command (process-get process :command)))
     (if (and (eq (process-status process) 'exit)   ;; if success
 	     (eq (process-exit-status process) 0))
 	(and (buffer-name temp-buffer)             ;; kill temp buffer
@@ -108,8 +109,9 @@ This is the sentinel set in `gtags-mode--exec-async'."
 	(message "Global error output:\n%s" (buffer-string))))
     (when (buffer-live-p parent-buffer)            ;; Always clear the cache
       (with-current-buffer parent-buffer
-	(plist-put gtags-mode--plist :cache nil))))
-  (message "Async %s: %s" (process-command process) event)) ;; Notify
+	(plist-put gtags-mode--plist :cache nil)))
+    ;; TODO: use `remote-command' in the future, it will be on emacs 29.1
+    (message "Async %s: %s" command event))) ;; Notify
 
 (defsubst gtags-mode--quote (args symbol)
   "Pre-process ARGS and quote SYMBOL."
@@ -122,12 +124,14 @@ Start an asynchronous process and sets
 `gtags-mode--exec-async-sentinel' as the process sentinel.
 Returns the process object."
   (when cmd
-    (let ((pr (make-process :name (format "%s-async" cmd)
-			    :buffer (generate-new-buffer " *temp*" t)
-			    :command (append `(,cmd) (gtags-mode--quote args target))
-			    :sentinel #'gtags-mode--exec-async-sentinel
-			    :file-handler t)))
+    (let* ((command (append `(,cmd) (gtags-mode--quote args target)))
+	   (pr (make-process :name (format "%s-async" cmd)
+			     :buffer (generate-new-buffer " *temp*" t)
+			     :command command
+			     :sentinel #'gtags-mode--exec-async-sentinel
+			     :file-handler t)))
       (process-put pr :buffer (current-buffer))
+      (process-put pr :command command) ;; In future not needed with `remote-commands'.
       pr)))
 
 (defun gtags-mode--exec-sync (args &optional target)
