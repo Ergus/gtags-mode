@@ -57,7 +57,7 @@ The address is absolute for remote hosts.")
 
 (defvar-local gtags-mode--global (executable-find gtags-mode-global-executable))
 (defvar-local gtags-mode--gtags (executable-find gtags-mode-gtags-executable))
-(defvar-local gtags-mode--root nil
+(defvar-local gtags-mode--plist nil
   "Project Global root for this buffer.
 The address is relative on remote hosts and includes the remote prefix.")
 
@@ -79,7 +79,7 @@ The address is relative on remote hosts and includes the remote prefix.")
 	      (symvars (intern (concat "gtags-mode--" remote "-vars")))
 	      (enable-connection-local-variables t))
     (unless (alist-get symvars connection-local-profile-alist)
-      (with-connection-local-variables
+      (with-connection-local-variables  ;; because *-executable can be set as connection local
        (let ((global (if (local-variable-p 'gtags-mode-global-executable)
 			 gtags-mode-global-executable
 		       (file-name-nondirectory gtags-mode-global-executable)))
@@ -108,8 +108,7 @@ This is the sentinel set in `gtags-mode--exec-async'."
 	(message "Global error output:\n%s" (buffer-string))))
     (when (buffer-live-p parent-buffer)            ;; Always clear the cache
       (with-current-buffer parent-buffer
-	(gtags-mode--get-plist gtags-mode--root
-			       (lambda (p) (plist-put p :cache nil))))))
+	(plist-put gtags-mode--plist :cache nil))))
   (message "Async %s: %s" (process-command process) event)) ;; Notify
 
 (defun gtags-mode--exec-async (cmd args)
@@ -133,56 +132,51 @@ On success return a list of strings or nil if any error occurred."
     (with-temp-buffer
       (let ((status (apply #'process-file global nil (current-buffer) nil args)))
 	(if (eq status 0)
-	    (string-lines (buffer-string) t)
+	    (string-lines (string-trim (buffer-substring-no-properties
+					(point-min)
+					(point-max))) t)
 	  (message "Global error output:\n%s" (buffer-string))
 	  (message "Sync global %s: exited abnormally with code %s" args status)
 	  nil)))))
 
 ;; Utilities functions (a bit less low level) ========================
-(defun gtags-mode--get-plist (file action)
+(defun gtags-mode--get-plist (file)
   "Apply ACTION on a plist with known prefix FILE from `gtags-mode--alist'."
   (let ((truename (file-truename file)))
     (catch 'found
       (mapc (lambda (plist)
-	      (when (string-prefix-p (plist-get plist :root) truename)
-		(throw 'found (funcall action plist))))
+	      (when (string-prefix-p (plist-get plist :gtagsroot) truename)
+		(throw 'found plist)))
 	    gtags-mode--alist)
       nil)))
 
-(defun gtags-mode--find-root ()
+(defun gtags-mode--find-or-create-plist ()
   "Return the GLOBAL project root.  Return nil if none."
-  (when-let ((root (car (gtags-mode--exec-sync '("--print-dbpath")))))
-    (setq root (concat (file-remote-p default-directory)
-		       (file-truename root)))
-    (add-to-list 'gtags-mode--alist `(:root ,root :cache nil)
-		 nil (lambda (o1 o2)
-		       (string= (plist-get o1 :root) (plist-get o2 :root))))
-    root))
+  (when-let* ((root (car (gtags-mode--exec-sync '("--print-dbpath")))))
+    (setq root (concat (file-remote-p default-directory) (file-truename root)))
+    (or (gtags-mode--get-plist root)   ;; already exist
+	(car (push (list :gtagsroot root :cache nil) gtags-mode--alist)))))
 
 (defun gtags-mode--list-completions (prefix)
   "Get the list of completions for PREFIX.
 When PREFIX is nil or empty; return the entire list of
 completions usually from the cache when possible."
-  (if (and (stringp prefix) (not (string-blank-p prefix))) ;; not use cache
-      (gtags-mode--exec-sync (append '("--ignore-case" "--completion")
-				     `(,(shell-quote-argument prefix))))
-    (gtags-mode--get-plist
-     gtags-mode--root
-     (lambda (plist)    ;; set and return the cache
-       (if-let ((cache (plist-get plist :cache)))
-	   cache
-	 (setq cache (gtags-mode--exec-sync '("--completion")))
-	 (plist-put plist :cache cache)
-	 cache)))))
+  (cond
+   ((and (stringp prefix) (not (string-blank-p prefix))) ;; not use cache
+    (gtags-mode--exec-sync (append '("--ignore-case" "--completion")
+				     `(,(shell-quote-argument prefix)))))
+   ((plist-get gtags-mode--plist :cache))                ;; return cache
+   ((plist-put gtags-mode--plist :cache (gtags-mode--exec-sync '("--completion")))
+    (plist-get gtags-mode--plist :cache))))             ;; set and return cache
 
-(defun gtags-mode--buffers-in-root (root)
-  "Return a list of buffers which variable `buffer-file-name' is inside ROOT."
-  (when root
+(defun gtags-mode--buffers-in-root (plist)
+  "Return a list of buffers which variable `buffer-file-name' is inside PLIST."
+  (when-let ((root (plist-get plist :gtagsroot)))
     (mapcan (lambda (buf)
-	      (when-let* ((bname (buffer-local-value 'buffer-file-name buf))
-			  (tname (file-truename bname))
-			  ((string-prefix-p root tname)))
-		(list buf)))
+	      (and-let* ((bname (buffer-local-value 'buffer-file-name buf))
+			 (tname (file-truename bname))
+			 ((string-prefix-p root tname))
+			 ((list buf)))))
 	    (buffer-list))))
 
 (defun gtags-mode--filter-find-symbol (args symbol creator)
@@ -207,31 +201,30 @@ name, code, file, line."
 ;; Interactive commands ==============================================
 (defun gtags-mode-create (root-dir)
   "Create a GLOBAL GTAGS file in ROOT-DIR asynchronously."
-  (interactive "DCreate db in directory: ")
+  (interactive "DCreate GLOBAL files in directory: ")
   (let ((default-directory root-dir))
     (gtags-mode--exec-async gtags-mode--gtags nil)))
 
 (defun gtags-mode-update ()
   "Update GLOBAL project database."
   (interactive)
-  (if gtags-mode--root
+  (if gtags-mode--plist
       (gtags-mode--exec-async gtags-mode--global '("--update"))
     (error "Not under a GLOBAL project")))
 
 ;; Hooks =============================================================
 (defun gtags-mode--after-save-hook ()
   "After save hook to update GLOBAL database with changed data."
-  (when (and buffer-file-name gtags-mode--root)
+  (when (and buffer-file-name (plist-get gtags-mode--plist :gtagsroot))
     (gtags-mode--exec-async
      gtags-mode--global
-     (list "--single-update"
-	   (file-name-nondirectory buffer-file-name)))))
+     (list "--single-update" (file-name-nondirectory buffer-file-name)))))
 
 (defun gtags-mode--find-file-hook ()
   "Try to enable `gtags' when opening a file.
 Check the roots list and enable `gtags' if the open file is in
 one of them."
-  (when (gtags-mode--get-plist buffer-file-name #'identity)
+  (when (gtags-mode--get-plist buffer-file-name)
     (gtags-mode 1)))
 
 ;; xref integration ==================================================
@@ -247,21 +240,21 @@ Return as a list of xref location objects."
 
 (defun gtags-xref-backend ()
   "Gtags backend for Xref."
-  (and gtags-mode--root 'gtags))
+  gtags-mode--plist)
 
-(cl-defmethod xref-backend-identifier-completion-table ((_backend (eql gtags)))
+(cl-defmethod xref-backend-identifier-completion-table ((_backend (head :gtagsroot)))
   "List all symbols."
   (gtags-mode--list-completions nil))
 
-(cl-defmethod xref-backend-definitions ((_backend (eql gtags)) symbol)
+(cl-defmethod xref-backend-definitions ((_backend (head :gtagsroot)) symbol)
   "List all definitions for SYMBOL."
   (gtags-mode--xref-find-symbol '("--definition") symbol))
 
-(cl-defmethod xref-backend-references ((_backend (eql gtags)) symbol)
+(cl-defmethod xref-backend-references ((_backend (head :gtagsroot)) symbol)
   "List all referenced for SYMBOL."
   (gtags-mode--xref-find-symbol '("--reference") symbol))
 
-(cl-defmethod xref-backend-apropos ((_backend (eql gtags)) symbol)
+(cl-defmethod xref-backend-apropos ((_backend (head :gtagsroot)) symbol)
   "List grepped list of candidates SYMBOL."
   (gtags-mode--xref-find-symbol '("--grep") symbol))
 
@@ -283,14 +276,13 @@ Return as a list of xref location objects."
 ;; project integration ===============================================
 (defun gtags-mode-project-backend (dir)
   "Return the project for DIR as an array."
-  (when-let ((plist (gtags-mode--get-plist dir #'identity)))
-    (list 'gtags (plist-get plist :root))))
+  (gtags-mode--get-plist dir))
 
-(cl-defmethod project-root ((project (head gtags)))
+(cl-defmethod project-root ((project (head :gtagsroot)))
   "Root for PROJECT."
-  (cadr project))
+  (plist-get project :gtagsroot))
 
-(cl-defmethod project-files ((project (head gtags)) &optional dirs)
+(cl-defmethod project-files ((project (head :gtagsroot)) &optional dirs)
   "List files inside all the PROJECT or in if specified DIRS ."
   (let* ((root (project-root project))
 	 (remote (file-remote-p root))
@@ -305,9 +297,9 @@ Return as a list of xref location objects."
 		   (or dirs (list root)))))
     (if (> (length dirs) 1) (delete-dups results) results)))
 
-(cl-defmethod project-buffers ((project (head gtags)))
+(cl-defmethod project-buffers ((project (head :gtagsroot)))
   "Return the list of all live buffers that belong to PROJECT."
-  (gtags-mode--buffers-in-root (project-root project)))
+  (gtags-mode--buffers-in-root project))
 
 ;; Completion-at-point-function (capf) ===============================
 (defun gtags-mode-completion-function ()
