@@ -108,7 +108,8 @@ This is the sentinel set in `gtags-mode--exec-async'."
 	(message "Global async error output:\n%s" (buffer-string))))
     (when (buffer-live-p parent-buffer)            ;; Always clear the cache
       (with-current-buffer parent-buffer
-	(plist-put gtags-mode--plist :cache nil)))
+	(when gtags-mode--plist
+	  (plist-put gtags-mode--plist :cache nil))))
     ;; TODO: use `remote-command' in the future, it will be on emacs 29.1
     (message "Async %s: %s" (process-get process :command) event))) ;; Notify
 
