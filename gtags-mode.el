@@ -105,7 +105,7 @@ This is the sentinel set in `gtags-mode--exec-async'."
 	     (kill-buffer temp-buffer))
       (with-current-buffer temp-buffer             ;; else print error
 	(while (accept-process-output process))
-	(message "Global error output:\n%s" (buffer-string))))
+	(message "Global async error output:\n%s" (buffer-string))))
     (when (buffer-live-p parent-buffer)            ;; Always clear the cache
       (with-current-buffer parent-buffer
 	(plist-put gtags-mode--plist :cache nil)))
@@ -115,15 +115,15 @@ This is the sentinel set in `gtags-mode--exec-async'."
 (defsubst gtags-mode--quote (args symbol)
   "Pre-process ARGS and quote SYMBOL."
   (append args (and (stringp symbol) (not (string-blank-p symbol))
-		    (list (shell-quote-argument symbol)))))
+		    `(,(shell-quote-argument symbol)))))
 
 (defun gtags-mode--exec-async (cmd args &optional target)
-  "Run CMD with ARGS asynchronously and set SENTINEL to process.
+  "Run CMD with ARGS on TARGET asynchronously.
 Start an asynchronous process and sets
 `gtags-mode--exec-async-sentinel' as the process sentinel.
 Returns the process object."
   (when cmd
-    (let* ((command (append `(,cmd) (gtags-mode--quote args target)))
+    (let* ((command (gtags-mode--quote (append `(,cmd) args) target))
 	   (pr (make-process :name (format "%s-async" cmd)
 			     :buffer (generate-new-buffer " *temp*" t)
 			     :command command
@@ -134,9 +134,9 @@ Returns the process object."
       pr)))
 
 (defun gtags-mode--exec-sync (args &optional target)
-  "Run global with ARGS synchronously.
+  "Run global with ARGS on TARGET synchronously.
 On success return a list of strings or nil if any error occurred."
-  (when-let ((global gtags-mode--global)
+  (when-let ((global gtags-mode--global) ;; Required for with-temp-buffer
 	     (cargs (gtags-mode--quote args target)))
     (with-temp-buffer
       (let ((status (apply #'process-file global nil (current-buffer) nil cargs)))
@@ -144,7 +144,7 @@ On success return a list of strings or nil if any error occurred."
 	    (string-lines (string-trim (buffer-substring-no-properties
 					(point-min)
 					(point-max))) t)
-	  (message "Global error output:\n%s" (buffer-string))
+	  (message "Global sync error output:\n%s" (buffer-string))
 	  (message "Sync global %s: exited abnormally with code %s" cargs status)
 	  nil)))))
 
@@ -164,7 +164,7 @@ On success return a list of strings or nil if any error occurred."
   (when-let* ((root (car (gtags-mode--exec-sync '("--print-dbpath")))))
     (setq root (concat (file-remote-p default-directory) (file-truename root)))
     (or (gtags-mode--get-plist root)   ;; already exist
-	(car (push (list :gtagsroot root :cache nil) gtags-mode--alist)))))
+	(car (push `(:gtagsroot ,root :cache nil) gtags-mode--alist)))))
 
 (defun gtags-mode--list-completions (prefix)
   "Get the list of completions for PREFIX.
@@ -184,7 +184,7 @@ completions usually from the cache when possible."
 	      (and-let* ((bname (buffer-local-value 'buffer-file-name buf))
 			 (tname (file-truename bname))
 			 ((string-prefix-p root tname))
-			 ((list buf)))))
+			 (`(,buf)))))
 	    (buffer-list))))
 
 (defun gtags-mode--filter-find-symbol (args symbol creator)
@@ -224,7 +224,7 @@ name, code, file, line."
   (when (and buffer-file-name (plist-get gtags-mode--plist :gtagsroot))
     (gtags-mode--exec-async
      gtags-mode--global
-     (list "--single-update" (file-name-nondirectory buffer-file-name)))))
+     `("--single-update" ,(file-name-nondirectory buffer-file-name)))))
 
 (defun gtags-mode--find-file-hook ()
   "Try to enable `gtags' when opening a file.
@@ -301,7 +301,7 @@ Return as a list of xref location objects."
 			       (gtags-mode--exec-sync
 				'("--path-style=absolute" "--path")
 				(string-remove-prefix root tdir)))))
-		   (or dirs (list root)))))
+		   (or dirs `(,root)))))
     (if (> (length dirs) 1) (delete-dups results) results)))
 
 (cl-defmethod project-buffers ((project (head :gtagsroot)))
