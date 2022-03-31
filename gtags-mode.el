@@ -194,10 +194,10 @@ name, code, file, line."
 	   (lambda (line)
 	     (when (string-match gtags-mode--output-format-regex line)
 	       (funcall creator
-			(match-string 1 line)   ;; name
-			(match-string 4 line)   ;; code
-			(match-string 3 line)   ;; file
-			(string-to-number (match-string 2 line))))) ;; line
+			(match-string-no-properties 1 line)   ;; name
+			(match-string-no-properties 4 line)   ;; code
+			(match-string-no-properties 3 line)   ;; file
+			(string-to-number (match-string-no-properties 2 line))))) ;; line
 	   (gtags-mode--exec-sync
 	    (append args gtags-mode--output-format-options) symbol))))
 
