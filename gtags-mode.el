@@ -123,31 +123,38 @@ This is the sentinel set in `gtags-mode--exec-async'."
 Start an asynchronous process and sets
 `gtags-mode--exec-async-sentinel' as the process sentinel.
 Returns the process object."
-  (when cmd
-    (let* ((command (gtags-mode--quote (append `(,cmd) args) target))
-	   (pr (make-process :name (format "%s-async" cmd)
-			     :buffer (generate-new-buffer " *temp*" t)
-			     :command command
-			     :sentinel #'gtags-mode--exec-async-sentinel
-			     :file-handler t)))
-      ;; In future not needed with `remote-commands'.
-      (set-process-plist pr `(:buffer ,(current-buffer) :command ,command))
-      pr)))
+  (gtags-mode--set-connection-locals)
+  (if-let* ((cmd (buffer-local-value cmd (current-buffer)))
+	    (command (gtags-mode--quote (append `(,cmd) args) target))
+	    (pr (make-process :name (format "%s-async" cmd)
+			      :buffer (generate-new-buffer " *temp*" t)
+			      :command command
+			      :sentinel #'gtags-mode--exec-async-sentinel
+			      :file-handler t)))
+      (progn
+	;; In future not needed with `remote-commands'.
+	(set-process-plist pr `(:buffer ,(current-buffer) :command ,command))
+	pr)
+    (message "Can't start async %s subprocess" cmd)
+    nil))
 
 (defun gtags-mode--exec-sync (args &optional target)
   "Run global with ARGS on TARGET synchronously.
 On success return a list of strings or nil if any error occurred."
-  (when-let ((global gtags-mode--global) ;; Required for with-temp-buffer
-	     (cargs (gtags-mode--quote args target)))
-    (with-temp-buffer
-      (let ((status (apply #'process-file global nil (current-buffer) nil cargs)))
-	(if (eq status 0)
-	    (string-lines (string-trim (buffer-substring-no-properties
-					(point-min)
-					(point-max))) t)
-	  (message "Global sync error output:\n%s" (buffer-string))
-	  (message "Sync global %s: exited abnormally with code %s" cargs status)
-	  nil)))))
+  (gtags-mode--set-connection-locals)
+  (if-let ((cmd gtags-mode--global) ;; Required for with-temp-buffer
+	   (cargs (gtags-mode--quote args target)))
+      (with-temp-buffer
+	(let ((status (apply #'process-file cmd nil (current-buffer) nil cargs)))
+	  (if (eq status 0)
+	      (string-lines (string-trim (buffer-substring-no-properties
+					  (point-min)
+					  (point-max))) t)
+	    (message "Global sync error output:\n%s" (buffer-string))
+	    (message "Sync global %s: exited abnormally with code %s" cargs status)
+	    nil)))
+    (message "Can't start sync %s subprocess" cmd)
+    nil))
 
 ;; Utilities functions (a bit less low level) ========================
 (defun gtags-mode--get-plist (file)
