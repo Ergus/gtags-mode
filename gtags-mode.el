@@ -111,7 +111,12 @@ This is the sentinel set in `gtags-mode--exec-async'."
 	(plist-put gtags-mode--plist :cache nil))))
   (message "Async %s: %s" (process-command process) event)) ;; Notify
 
-(defun gtags-mode--exec-async (cmd args)
+(defsubst gtags-mode--quote (args symbol)
+  "Pre-process ARGS and quote SYMBOL."
+  (append args (and (stringp symbol) (not (string-blank-p symbol))
+		    (list (shell-quote-argument symbol)))))
+
+(defun gtags-mode--exec-async (cmd args &optional target)
   "Run CMD with ARGS asynchronously and set SENTINEL to process.
 Start an asynchronous process and sets
 `gtags-mode--exec-async-sentinel' as the process sentinel.
@@ -119,24 +124,25 @@ Returns the process object."
   (when cmd
     (let ((pr (make-process :name (format "%s-async" cmd)
 			    :buffer (generate-new-buffer " *temp*" t)
-			    :command (append (list cmd) args)
+			    :command (append `(,cmd) (gtags-mode--quote args target))
 			    :sentinel #'gtags-mode--exec-async-sentinel
 			    :file-handler t)))
       (process-put pr :buffer (current-buffer))
       pr)))
 
-(defun gtags-mode--exec-sync (args)
+(defun gtags-mode--exec-sync (args &optional target)
   "Run global with ARGS synchronously.
 On success return a list of strings or nil if any error occurred."
-  (when-let ((global gtags-mode--global))
+  (when-let ((global gtags-mode--global)
+	     (cargs (gtags-mode--quote args target)))
     (with-temp-buffer
-      (let ((status (apply #'process-file global nil (current-buffer) nil args)))
+      (let ((status (apply #'process-file global nil (current-buffer) nil cargs)))
 	(if (eq status 0)
 	    (string-lines (string-trim (buffer-substring-no-properties
 					(point-min)
 					(point-max))) t)
 	  (message "Global error output:\n%s" (buffer-string))
-	  (message "Sync global %s: exited abnormally with code %s" args status)
+	  (message "Sync global %s: exited abnormally with code %s" cargs status)
 	  nil)))))
 
 ;; Utilities functions (a bit less low level) ========================
@@ -191,9 +197,7 @@ name, code, file, line."
 			(match-string 3 line)   ;; file
 			(string-to-number (match-string 2 line))))) ;; line
 	   (gtags-mode--exec-sync
-	    (append args gtags-mode--output-format-options
-		    (unless (string-blank-p symbol)
-		      (list (shell-quote-argument symbol))))))))
+	    (append args gtags-mode--output-format-options) symbol))))
 
 ;; Interactive commands ==============================================
 (defun gtags-mode-create (root-dir)
@@ -280,17 +284,18 @@ Return as a list of xref location objects."
   (plist-get project :gtagsroot))
 
 (cl-defmethod project-files ((project (head :gtagsroot)) &optional dirs)
-  "List files inside all the PROJECT or in if specified DIRS ."
+  "List files inside all the PROJECT or in DIRS if specified."
   (let* ((root (project-root project))
 	 (remote (file-remote-p root))
 	 (results (mapcan
 		   (lambda (dir)
 		     (when-let* ((tdir (file-truename dir))
 				 ((string-prefix-p root tdir)))
-		       (gtags-mode--filter-find-symbol
-			'("--path") (string-remove-prefix root tdir)
-			(lambda (_name _code file _line)
-			  (concat remote file)))))
+		       (mapcar (lambda (file)
+				 (concat remote file)) ;; Add remote prefix
+			       (gtags-mode--exec-sync
+				'("--path-style=absolute" "--path")
+				(string-remove-prefix root tdir)))))
 		   (or dirs (list root)))))
     (if (> (length dirs) 1) (delete-dups results) results)))
 
