@@ -161,13 +161,10 @@ On success return a list of strings or nil if any error occurred."
   "Get the list of completions for PREFIX.
 When PREFIX is nil or empty; return the entire list of
 completions usually from the cache when possible."
-  (cond
-   ((and (stringp prefix) (not (string-blank-p prefix))) ;; not use cache
-    (gtags-mode--exec-sync (append '("--ignore-case" "--completion")
-				     `(,(shell-quote-argument prefix)))))
-   ((plist-get gtags-mode--plist :cache))                ;; return cache
-   ((plist-put gtags-mode--plist :cache (gtags-mode--exec-sync '("--completion")))
-    (plist-get gtags-mode--plist :cache))))             ;; set and return cache
+  (or (and (stringp prefix) (not (string-blank-p prefix))
+	   (gtags-mode--exec-sync '("--ignore-case" "--completion") prefix))
+      (with-memoization (plist-get gtags-mode--plist :cache)
+	(gtags-mode--exec-sync '("--completion")))))
 
 (defun gtags-mode--buffers-in-root (plist)
   "Return a list of buffers which variable `buffer-file-name' is inside PLIST."
