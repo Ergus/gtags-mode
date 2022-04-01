@@ -97,21 +97,24 @@ The address is relative on remote hosts and includes the remote prefix.")
 (defun gtags-mode--exec-async-sentinel (process event)
   "Sentinel to run when PROCESS emits EVENT.
 This is the sentinel set in `gtags-mode--exec-async'."
-  (let ((temp-buffer (process-buffer process))
-	(parent-buffer (process-get process :buffer)))
-    (if (and (eq (process-status process) 'exit)   ;; if success
-	     (eq (process-exit-status process) 0))
-	(and (buffer-name temp-buffer)             ;; kill temp buffer
-	     (kill-buffer temp-buffer))
-      (with-current-buffer temp-buffer             ;; else print error
-	(while (accept-process-output process))
-	(message "Global async error output:\n%s" (buffer-string))))
-    (when (buffer-live-p parent-buffer)            ;; Always clear the cache
-      (with-current-buffer parent-buffer
-	(when gtags-mode--plist
-	  (plist-put gtags-mode--plist :cache nil))))
-    ;; TODO: use `remote-command' in the future, it will be on emacs 29.1
-    (message "Async %s: %s" (process-get process :command) event))) ;; Notify
+  (if (and (eq (process-status process) 'exit)         ;; On success e
+	   (eql (process-exit-status process) 0))
+      (let ((temp-buffer (process-buffer process))
+	    (parent-buffer (process-get process :parent-buffer))
+	    (extra-sentinel (process-get process :extra-sentinel)))
+	(when (buffer-name temp-buffer)                ;; kill temp buffer
+	  (while (accept-process-output process))
+	  (kill-buffer temp-buffer))
+	(when (buffer-live-p parent-buffer)            ;; work on parent buffer
+	  (with-current-buffer parent-buffer
+	    (when (functionp extra-sentinel)           ;; run extra sentinel
+	      (funcall extra-sentinel))
+	    (when gtags-mode--plist                    ;; clear cache
+	      (plist-put gtags-mode--plist :cache nil)))))
+    (with-current-buffer (process-buffer process)      ;; In failure print error
+      (while (accept-process-output process))
+      (message "Global async error output:\n%s" (buffer-string))))
+  (message "Async %s: %s" (process-get process :command) event)) ;; Notify always
 
 (defsubst gtags-mode--quote (args symbol)
   "Pre-process ARGS and quote SYMBOL."
@@ -133,7 +136,7 @@ Returns the process object."
 			      :file-handler t)))
       (progn
 	;; In future not needed with `remote-commands'.
-	(set-process-plist pr `(:buffer ,(current-buffer) :command ,command))
+	(set-process-plist pr `(:parent-buffer ,(current-buffer) :command ,command))
 	pr)
     (message "Can't start async %s subprocess" cmd)
     nil))
