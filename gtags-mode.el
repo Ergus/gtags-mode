@@ -58,8 +58,7 @@ The address is absolute for remote hosts.")
 (defvar-local gtags-mode--global (executable-find gtags-mode-global-executable))
 (defvar-local gtags-mode--gtags (executable-find gtags-mode-gtags-executable))
 (defvar-local gtags-mode--plist nil
-  "Project Global root for this buffer.
-The address is relative on remote hosts and includes the remote prefix.")
+  "Project Global root for this buffer.")
 
 (defconst gtags-mode--output-format-regex
   "^\\([^[:blank:]]+\\)[[:blank:]]+\\([[:digit:]]+\\)[[:blank:]]+\\([^[:blank:]]+\\)[[:blank:]]+\\(.*\\)"
@@ -71,7 +70,7 @@ The address is relative on remote hosts and includes the remote prefix.")
 
 ;; Connection functions
 (defun gtags-mode--set-connection-locals ()
-  "Set GLOBAL connection local variables when possible and needed."
+  "Set connection local variables when possible and needed."
   (when-let* ((remote (file-remote-p default-directory))
 	      ((not (and (local-variable-p 'gtags-mode--global)
 			 (local-variable-p 'gtags-mode--gtags))))
@@ -97,7 +96,7 @@ The address is relative on remote hosts and includes the remote prefix.")
 (defun gtags-mode--exec-async-sentinel (process event)
   "Sentinel to run when PROCESS emits EVENT.
 This is the sentinel set in `gtags-mode--exec-async'."
-  (if (and (eq (process-status process) 'exit)         ;; On success e
+  (if (and (eq (process-status process) 'exit)         ;; On success
 	   (eql (process-exit-status process) 0))
       (let ((temp-buffer (process-buffer process))
 	    (parent-buffer (process-get process :parent-buffer))
@@ -219,33 +218,30 @@ Return the buffer local value of `gtags-mode--plist'."
   "Actions to perform after creating a database.
 This runs only when the process exits successfully and is
 executed in the parent buffer."
-  (unless gtags-mode--plist
-    (kill-local-variable 'gtags-mode--plist)
-    (gtags-mode--set-local-plist)
-    (when-let ((plist gtags-mode--plist)
-	       (root (plist-get gtags-mode--plist :root)))
-      (mapc (lambda (buff)
+  (when-let ((currbuff (current-buffer))
+	     (root (plist-get (gtags-mode--set-local-plist) :root)))
+    (mapc (lambda (buff)
+	    (unless (eq currbuff buff)
 	      (with-current-buffer buff
 		(when (and (not gtags-mode--plist)
 			   (string-prefix-p root (file-truename default-directory)))
-		  (kill-local-variable 'gtags-mode--plist)
-		  (gtags-mode--set-local-plist))))
-	    (buffer-list)))))
+		  (kill-local-variable 'gtags-mode--plist) ;; kill the local to reset it
+		  (gtags-mode--set-local-plist)))))
+	  (buffer-list))))
 
 ;; Interactive commands ==============================================
 (defun gtags-mode-create (root-dir)
   "Create a GLOBAL GTAGS file in ROOT-DIR asynchronously."
   (interactive "DCreate GLOBAL files in directory: ")
-  (let ((default-directory root-dir))
-    (process-put (gtags-mode--exec-async 'gtags-mode--gtags nil)
-		 :extra-sentinel #'gtags-mode--update-buffers-plist)))
+  (when-let* ((default-directory root-dir)
+	      (pr (gtags-mode--exec-async 'gtags-mode--gtags nil)))
+    (process-put pr :extra-sentinel #'gtags-mode--update-buffers-plist)))
 
 (defun gtags-mode-update ()
   "Update GLOBAL project database."
   (interactive)
-  (if gtags-mode--plist
-      (gtags-mode--exec-async 'gtags-mode--global '("--update"))
-    (error "Not under a GLOBAL project")))
+  (when gtags-mode--plist
+    (gtags-mode--exec-async 'gtags-mode--global '("--update"))))
 
 ;; Hooks =============================================================
 (defun gtags-mode--after-save-hook ()
@@ -253,9 +249,7 @@ executed in the parent buffer."
   (when (and buffer-file-name gtags-mode--plist)
     (gtags-mode--exec-async
      'gtags-mode--global
-     `("--single-update") ,(file-name-nondirectory buffer-file-name))))
-
-(defalias 'gtags-mode--find-file-hook #'gtags-mode--set-local-plist)
+     '("--single-update") (file-name-nondirectory buffer-file-name))))
 
 ;; xref integration ==================================================
 (defun gtags-mode--xref-find-symbol (args symbol)
@@ -267,8 +261,6 @@ Return as a list of xref location objects."
      (xref-make code (xref-make-file-location
 		      (concat (file-remote-p default-directory) file)
 		      line 0)))))
-
-(defalias 'gtags-xref-backend #'gtags-mode--set-local-plist)
 
 (cl-defmethod xref-backend-identifier-completion-table ((_backend (head :gtagsroot)))
   "List all symbols."
@@ -355,17 +347,17 @@ Return as a list of xref location objects."
   :lighter gtags-mode-lighter
   (cond
    (gtags-mode
-    (add-hook 'find-file-hook #'gtags-mode--find-file-hook)
+    (add-hook 'find-file-hook #'gtags-mode--set-local-plist)
     (add-hook 'project-find-functions #'gtags-mode-project-backend)
-    (add-hook 'xref-backend-functions #'gtags-xref-backend)
+    (add-hook 'xref-backend-functions #'gtags-mode--set-local-plist)
     (add-hook 'completion-at-point-functions #'gtags-mode-completion-function)
     (add-hook 'after-save-hook #'gtags-mode--after-save-hook)
     (setq gtags-mode--imenu-default-function imenu-create-index-function)
     (setq imenu-create-index-function #'gtags-mode-imenu-create-index-function))
    (t
-    (remove-hook 'find-file-hook #'gtags-mode--find-file-hook)
+    (remove-hook 'find-file-hook #'gtags-mode--set-local-plist)
     (remove-hook 'project-find-functions #'gtags-mode-project-backend)
-    (remove-hook 'xref-backend-functions #'gtags-xref-backend)
+    (remove-hook 'xref-backend-functions #'gtags-mode--set-local-plist)
     (remove-hook 'completion-at-point-functions #'gtags-mode-completion-function)
     (remove-hook 'after-save-hook #'gtags-mode--after-save-hook)
     (setq imenu-create-index-function gtags-mode--imenu-default-function))))
