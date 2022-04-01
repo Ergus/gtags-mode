@@ -281,11 +281,14 @@ Return as a list of xref location objects."
 
 (defun gtags-mode-imenu-create-index-function ()
   "Make imenu use Global."
-  (when buffer-file-name
-    (gtags-mode--filter-find-symbol
-     '("--file") (file-name-nondirectory buffer-file-name)
-     (lambda (name _code _file line)
-       (list name line #'gtags-mode--imenu-goto-function)))))
+  (if (and buffer-file-name gtags-mode--plist)
+      (gtags-mode--filter-find-symbol
+       '("--file") (file-name-nondirectory buffer-file-name)
+       (lambda (name _code _file line)
+	 (list name line #'gtags-mode--imenu-goto-function)))
+    ;; Else try to use the default function.
+    (when (functionp gtags-mode--imenu-default-function)
+      (funcall gtags-mode--imenu-default-function))))
 
 ;; project integration ===============================================
 (defun gtags-mode-project-backend (dir)
