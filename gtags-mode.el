@@ -65,7 +65,7 @@ The address is absolute for remote hosts.")
   "Regex to filter the output with `gtags-mode--output-format-options'.")
 
 (defconst gtags-mode--output-format-options
-  '("--result=ctags-x" "--path-style=absolute")
+  '("--result=ctags-x" "--path-style=absolute --color=never")
   "Command line options to use with `gtags-mode--output-format-regex'.")
 
 ;; Connection functions
@@ -75,7 +75,7 @@ The address is absolute for remote hosts.")
 	      ((not (and (local-variable-p 'gtags-mode--global)
 			 (local-variable-p 'gtags-mode--gtags))))
 	      (criteria (connection-local-criteria-for-default-directory))
-	      (symvars (intern (concat "gtags-mode--" remote "-vars")))
+	      (symvars (intern (format "gtags-mode--%s-vars" remote)))
 	      (enable-connection-local-variables t))
     (unless (alist-get symvars connection-local-profile-alist)
       (with-connection-local-variables  ;; because *-executable can be set as connection local
@@ -248,12 +248,12 @@ This iterates over the buffers and tries to reset
 (defun gtags-mode--xref-find-symbol (args symbol)
   "Run GNU Global to create xref input list with ARGS on SYMBOL.
 Return as a list of xref location objects."
-  (gtags-mode--filter-find-symbol
-   args symbol
-   (lambda (_name code file line)
-     (xref-make code (xref-make-file-location
-		      (concat (file-remote-p default-directory) file)
-		      line 0)))))
+  (let ((remote (file-remote-p default-directory)))
+    (gtags-mode--filter-find-symbol
+     args symbol
+     (lambda (_name code file line)
+       (xref-make code (xref-make-file-location
+			(file-truename (concat remote file)) line 0))))))
 
 (cl-defmethod xref-backend-identifier-completion-table ((_backend (head :gtagsroot)))
   "List all symbols."
