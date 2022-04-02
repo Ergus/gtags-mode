@@ -125,7 +125,6 @@ This is the sentinel set in `gtags-mode--exec-async'."
 Start an asynchronous process and sets
 `gtags-mode--exec-async-sentinel' as the process sentinel.
 Returns the process object."
-  (gtags-mode--set-connection-locals)
   (if-let* ((cmd (buffer-local-value cmd (current-buffer)))
 	    (command (gtags-mode--quote (append `(,cmd) args) target))
 	    (pr (make-process :name (format "%s-async" cmd)
@@ -143,7 +142,6 @@ Returns the process object."
 (defun gtags-mode--exec-sync (args &optional target)
   "Run global with ARGS on TARGET synchronously.
 On success return a list of strings or nil if any error occurred."
-  (gtags-mode--set-connection-locals)
   (if-let ((cmd gtags-mode--global) ;; Required for with-temp-buffer
 	   (cargs (gtags-mode--quote args target)))
       (with-temp-buffer
@@ -159,75 +157,70 @@ On success return a list of strings or nil if any error occurred."
     nil))
 
 ;; Utilities functions (a bit less low level) ========================
-(defun gtags-mode--get-plist (file)
-  "Return a plist for a FILE when it is known in `gtags-mode--alist'."
-  (let ((truename (file-truename file)))
+(defun gtags-mode--get-plist (directory)
+  "Return the plist for DIRECTORY from `gtags-mode--alist'."
+  (let ((truename (file-truename directory)))
     (catch 'found
-      (mapc (lambda (plist)
-	      (when (string-prefix-p (plist-get plist :gtagsroot) truename)
-		(throw 'found plist)))
-	    gtags-mode--alist)
+      (dolist (plist gtags-mode--alist)
+	(when (string-prefix-p (plist-get plist :gtagsroot) truename)
+	  (throw 'found plist)))
       nil)))
 
-(defun gtags-mode--find-or-create-plist ()
-  "Return the GLOBAL project root for `default-directory'.
-Return nil if none."
-  (when-let* ((root (car (gtags-mode--exec-sync '("--print-dbpath")))))
-    (setq root (concat (file-remote-p default-directory) (file-truename root)))
+(defun gtags-mode--create-plist (directory)
+  "Return dbpath for DIRECTORY or nil if none."
+  (when-let* ((default-directory (file-truename directory))
+	      (root (car (gtags-mode--exec-sync '("--print-dbpath")))))
+    (setq root (file-truename (concat (file-remote-p default-directory) root)))
     (or (gtags-mode--get-plist root)   ;; already exist
 	(car (push `(:gtagsroot ,root :cache nil) gtags-mode--alist)))))
+
+(defun gtags-mode--local-plist ()
+  "Set and return the buffer local value of `gtags-mode--plist'."
+  (if (local-variable-p 'gtags-mode--plist)
+      gtags-mode--plist
+    (gtags-mode--set-connection-locals)
+    (setq-local gtags-mode--plist (or (gtags-mode--get-plist default-directory)
+				      (gtags-mode--create-plist default-directory)))))
 
 (defun gtags-mode--list-completions (prefix)
   "Get the list of completions for PREFIX.
 When PREFIX is nil or empty; return the entire list of
 completions usually from the cache when possible."
   (cond ;; TODO: use with-memoization in the future it will be on emacs 29.1
+   ((not (gtags-mode--local-plist))
+    (error "Calling `gtags-mode--list-completions' with no gtags-mode--plist"))
    ((and (stringp prefix) (not (string-blank-p prefix))
 	 (gtags-mode--exec-sync '("--ignore-case" "--completion") prefix)))
    ((plist-get gtags-mode--plist :cache))
-   (gtags-mode--plist
-    (plist-put gtags-mode--plist :cache (gtags-mode--exec-sync '("--completion")))
-    (plist-get gtags-mode--plist :cache))))
+   (t (plist-put gtags-mode--plist :cache (gtags-mode--exec-sync '("--completion")))
+      (plist-get gtags-mode--plist :cache))))
 
 (defun gtags-mode--filter-find-symbol (args symbol creator)
   "Run `gtags-mode--exec-sync' with ARGS on SYMBOL and filter output with CREATOR.
 Returns the results as a list of CREATORS outputs similar to
 `mapcar'.  Creator should be a function with 4 input arguments:
 name, code, file, line."
-  (delete nil
-	  (mapcar
-	   (lambda (line)
-	     (when (string-match gtags-mode--output-format-regex line)
-	       (funcall creator
-			(match-string-no-properties 1 line)   ;; name
-			(match-string-no-properties 4 line)   ;; code
-			(match-string-no-properties 3 line)   ;; file
-			(string-to-number (match-string-no-properties 2 line))))) ;; line
-	   (gtags-mode--exec-sync
-	    (append args gtags-mode--output-format-options) symbol))))
-
-(defun gtags-mode--set-local-plist ()
-  "Set `gtags-mode--plist' for the current file.
-Return the buffer local value of `gtags-mode--plist'."
-  (if (local-variable-p 'gtags-mode--plist)
-      gtags-mode--plist
-    (setq-local gtags-mode--plist (or (gtags-mode--get-plist default-directory)
-				      (gtags-mode--find-or-create-plist)))))
+  (delete nil (mapcar
+	       (lambda (line)
+		 (when (string-match gtags-mode--output-format-regex line)
+		   (funcall creator
+			    (match-string-no-properties 1 line)   ;; name
+			    (match-string-no-properties 4 line)   ;; code
+			    (match-string-no-properties 3 line)   ;; file
+			    (string-to-number (match-string-no-properties 2 line))))) ;; line
+	       (gtags-mode--exec-sync
+		(append args gtags-mode--output-format-options) symbol))))
 
 (defun gtags-mode--update-buffers-plist ()
   "Actions to perform after creating a database.
-This runs only when the process exits successfully and is
-executed in the parent buffer."
-  (when-let ((currbuff (current-buffer))
-	     (root (plist-get (gtags-mode--set-local-plist) :root)))
-    (mapc (lambda (buff)
-	    (unless (eq currbuff buff)
-	      (with-current-buffer buff
-		(when (and (not gtags-mode--plist)
-			   (string-prefix-p root (file-truename default-directory)))
-		  (kill-local-variable 'gtags-mode--plist) ;; kill the local to reset it
-		  (gtags-mode--set-local-plist)))))
-	  (buffer-list))))
+This iterates over the buffers and tries to reset
+`gtags-mode--plist' when it is nil."
+  (dolist (buff (buffer-list))
+    (unless (buffer-local-value 'gtags-mode--plist buff)
+      (with-current-buffer buff
+	(gtags-mode--set-connection-locals)
+	(kill-local-variable 'gtags-mode--plist) ;; kill the local to reset it
+	(gtags-mode--local-plist)))))
 
 ;; Interactive commands ==============================================
 (defun gtags-mode-create (root-dir)
@@ -240,13 +233,13 @@ executed in the parent buffer."
 (defun gtags-mode-update ()
   "Update GLOBAL project database."
   (interactive)
-  (when gtags-mode--plist
+  (when (gtags-mode--local-plist)
     (gtags-mode--exec-async 'gtags-mode--global '("--update"))))
 
 ;; Hooks =============================================================
 (defun gtags-mode--after-save-hook ()
   "After save hook to update GLOBAL database with changed data."
-  (when (and buffer-file-name gtags-mode--plist)
+  (when (and buffer-file-name (gtags-mode--local-plist))
     (gtags-mode--exec-async
      'gtags-mode--global
      '("--single-update") (file-name-nondirectory buffer-file-name))))
@@ -279,22 +272,17 @@ Return as a list of xref location objects."
   (gtags-mode--xref-find-symbol '("--grep") symbol))
 
 ;; imenu integration =================================================
-(defvar gtags-mode--imenu-default-function nil)
-
 (defun gtags-mode--imenu-goto-function (_name line)
   "Function to goto with imenu when LINE info."
   (funcall-interactively #'goto-line line))
 
-(defun gtags-mode-imenu-create-index-function ()
+(defun gtags-mode--imenu-advice ()
   "Make imenu use Global."
-  (if (and buffer-file-name gtags-mode--plist)
-      (gtags-mode--filter-find-symbol
-       '("--file") (file-name-nondirectory buffer-file-name)
-       (lambda (name _code _file line)
-	 (list name line #'gtags-mode--imenu-goto-function)))
-    ;; Else try to use the default function.
-    (when (functionp gtags-mode--imenu-default-function)
-      (funcall gtags-mode--imenu-default-function))))
+  (when (and buffer-file-name (gtags-mode--local-plist))
+    (gtags-mode--filter-find-symbol
+     '("--file") (file-name-nondirectory buffer-file-name)
+     (lambda (name _code _file line)
+       (list name line #'gtags-mode--imenu-goto-function)))))
 
 ;; project integration ===============================================
 (defun gtags-mode-project-backend (dir)
@@ -323,18 +311,19 @@ Return as a list of xref location objects."
 
 (cl-defmethod project-buffers ((project (head :gtagsroot)))
   "Return the list of all live buffers that belong to PROJECT."
-  (when-let ((root (plist-get project :gtagsroot)))
-    (mapcar (lambda (buf)
-	      (when-let* ((bname (buffer-local-value 'buffer-file-name buf))
-			  (tname (file-truename bname))
-			  ((string-prefix-p root tname)))
-		buf))
-	    (buffer-list))))
+  (mapcar (lambda (buff)
+	    (cond
+	     ((eq (buffer-local-value 'gtags-mode--plist buff) project) buff)
+	     ((local-variable-p 'gtags-mode--plist buff) nil)
+	     (t (with-current-buffer buff
+		  (when (eq (gtags-mode--local-plist) project)
+		    (current-buffer))))))
+	  (buffer-list)))
 
 ;; Completion-at-point-function (capf) ===============================
 (defun gtags-mode-completion-function ()
   "Generate completion list."
-  (if (gtags-mode--set-local-plist)
+  (if (gtags-mode--local-plist)
       (when-let ((bounds (bounds-of-thing-at-point 'symbol)))
 	(list (car bounds) (cdr bounds)
 	      (completion-table-dynamic #'gtags-mode--list-completions)
@@ -347,20 +336,17 @@ Return as a list of xref location objects."
   :lighter gtags-mode-lighter
   (cond
    (gtags-mode
-    (add-hook 'find-file-hook #'gtags-mode--set-local-plist)
     (add-hook 'project-find-functions #'gtags-mode-project-backend)
-    (add-hook 'xref-backend-functions #'gtags-mode--set-local-plist)
+    (add-hook 'xref-backend-functions #'gtags-mode--local-plist)
     (add-hook 'completion-at-point-functions #'gtags-mode-completion-function)
     (add-hook 'after-save-hook #'gtags-mode--after-save-hook)
-    (setq gtags-mode--imenu-default-function imenu-create-index-function)
-    (setq imenu-create-index-function #'gtags-mode-imenu-create-index-function))
+    (advice-add imenu-create-index-function :before-until #'gtags-mode--imenu-advice))
    (t
-    (remove-hook 'find-file-hook #'gtags-mode--set-local-plist)
     (remove-hook 'project-find-functions #'gtags-mode-project-backend)
-    (remove-hook 'xref-backend-functions #'gtags-mode--set-local-plist)
+    (remove-hook 'xref-backend-functions #'gtags-mode--local-plist)
     (remove-hook 'completion-at-point-functions #'gtags-mode-completion-function)
     (remove-hook 'after-save-hook #'gtags-mode--after-save-hook)
-    (setq imenu-create-index-function gtags-mode--imenu-default-function))))
+    (advice-remove imenu-create-index-function #'gtags-mode--imenu-advice))))
 
 (provide 'gtags-mode)
 ;;; gtags-mode.el ends here
