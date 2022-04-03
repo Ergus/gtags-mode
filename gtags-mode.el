@@ -61,11 +61,11 @@ The address is absolute for remote hosts.")
   "Project Global root for this buffer.")
 
 (defconst gtags-mode--output-format-regex
-  "^\\([^[:blank:]]+\\)[[:blank:]]+\\([[:digit:]]+\\)[[:blank:]]+\\([^[:blank:]]+\\)[[:blank:]]+\\(.*\\)"
+  "^\\([^ ]+\\) \\([^ ]+\\) \\([[:digit:]]+\\) \\(.*\\)"
   "Regex to filter the output with `gtags-mode--output-format-options'.")
 
 (defconst gtags-mode--output-format-options
-  '("--result=ctags-x" "--path-style=absolute" "--color=never")
+  '("--result=cscope" "--path-style=through" "--color=never")
   "Command line options to use with `gtags-mode--output-format-regex'.")
 
 ;; Connection functions
@@ -199,16 +199,19 @@ completions usually from the cache when possible."
 Returns the results as a list of CREATORS outputs similar to
 `mapcar'.  Creator should be a function with 4 input arguments:
 name, code, file, line."
-  (delete nil (mapcar
-	       (lambda (line)
-		 (when (string-match gtags-mode--output-format-regex line)
-		   (funcall creator
-			    (match-string-no-properties 1 line)   ;; name
-			    (match-string-no-properties 4 line)   ;; code
-			    (match-string-no-properties 3 line)   ;; file
-			    (string-to-number (match-string-no-properties 2 line))))) ;; line
-	       (gtags-mode--exec-sync
-		(append args gtags-mode--output-format-options) symbol))))
+  (if-let ((root (plist-get (gtags-mode--local-plist) :gtagsroot)))
+      (delete nil (mapcar
+		   (lambda (line)
+		     (when (string-match gtags-mode--output-format-regex line)
+		       (funcall creator
+				(match-string-no-properties 2 line)   ;; name
+				(match-string-no-properties 4 line)   ;; code
+				(concat root (substring-no-properties
+					      line (1+ (match-beginning 1)) (match-end 1))) ;; file
+				(string-to-number (match-string-no-properties 3 line))))) ;; line
+		   (gtags-mode--exec-sync
+		    (append args gtags-mode--output-format-options) symbol)))
+    (error "Calling gtags-mode--filter-find-symbol without GTAGSROOT")))
 
 (defun gtags-mode--update-buffers-plist ()
   "Actions to perform after creating a database.
@@ -247,11 +250,10 @@ This iterates over the buffers and tries to reset
 (defun gtags-mode--xref-find-symbol (args symbol)
   "Run GNU Global to create xref input list with ARGS on SYMBOL.
 Return as a list of xref location objects."
-  (let ((remote (file-remote-p default-directory)))
-    (gtags-mode--filter-find-symbol
-     args symbol
-     (lambda (_name code file line)
-       (xref-make code (xref-make-file-location (concat remote file) line 0))))))
+  (gtags-mode--filter-find-symbol
+   args symbol
+   (lambda (_name code file line)
+     (xref-make code (xref-make-file-location file line 0)))))
 
 (cl-defmethod xref-backend-identifier-completion-table ((_backend (head :gtagsroot)))
   "List all symbols."
@@ -294,13 +296,13 @@ Return as a list of xref location objects."
 (cl-defmethod project-files ((project (head :gtagsroot)) &optional dirs)
   "List files inside all the PROJECT or in DIRS if specified."
   (let* ((root (project-root project))
-	 (remote (file-remote-p root))
 	 (results (mapcan
 		   (lambda (dir)
 		     (when (string-prefix-p root dir)
-		       (mapcar (lambda (file) (concat remote file)) ;; Add remote prefix
+		       (mapcar (lambda (file)
+				 (concat root (substring-no-properties file 1)))
 			       (gtags-mode--exec-sync
-				'("--path-style=absolute" "--path")
+				'("--path-style=through" "--path")
 				(string-remove-prefix root dir)))))
 		   (or dirs `(,root)))))
     (if (> (length dirs) 1) (delete-dups results) results)))
