@@ -65,7 +65,7 @@ The address is absolute for remote hosts.")
   "Regex to filter the output with `gtags-mode--output-format-options'.")
 
 (defconst gtags-mode--output-format-options
-  '("--result=ctags-x" "--path-style=absolute --color=never")
+  '("--result=ctags-x" "--path-style=absolute" "--color=never")
   "Command line options to use with `gtags-mode--output-format-regex'.")
 
 ;; Connection functions
@@ -157,20 +157,19 @@ On success return a list of strings or nil if any error occurred."
     nil))
 
 ;; Utilities functions (a bit less low level) ========================
-(defun gtags-mode--get-plist (directory)
+(defun gtags-mode--get-plist (dir)
   "Return the plist for DIRECTORY from `gtags-mode--alist'."
-  (let ((truename (file-truename directory)))
-    (catch 'found
-      (dolist (plist gtags-mode--alist)
-	(when (string-prefix-p (plist-get plist :gtagsroot) truename)
-	  (throw 'found plist)))
-      nil)))
+  (catch 'found
+    (dolist (plist gtags-mode--alist)
+      (when (string-prefix-p (plist-get plist :gtagsroot) dir)
+	(throw 'found plist)))
+    nil))
 
-(defun gtags-mode--create-plist (directory)
+(defun gtags-mode--create-plist (dir)
   "Return dbpath for DIRECTORY or nil if none."
-  (when-let* ((default-directory (file-truename directory))
+  (when-let* ((default-directory dir)
 	      (root (car (gtags-mode--exec-sync '("--print-dbpath")))))
-    (setq root (file-truename (concat (file-remote-p default-directory) root)))
+    (setq root (concat (file-remote-p default-directory) root))
     (or (gtags-mode--get-plist root)   ;; already exist
 	(car (push `(:gtagsroot ,root :cache nil) gtags-mode--alist)))))
 
@@ -252,8 +251,7 @@ Return as a list of xref location objects."
     (gtags-mode--filter-find-symbol
      args symbol
      (lambda (_name code file line)
-       (xref-make code (xref-make-file-location
-			(file-truename (concat remote file)) line 0))))))
+       (xref-make code (xref-make-file-location (concat remote file) line 0))))))
 
 (cl-defmethod xref-backend-identifier-completion-table ((_backend (head :gtagsroot)))
   "List all symbols."
@@ -287,7 +285,7 @@ Return as a list of xref location objects."
 ;; project integration ===============================================
 (defun gtags-mode-project-backend (dir)
   "Return the project for DIR as an array."
-  (gtags-mode--get-plist dir))
+  (gtags-mode--get-plist (file-truename dir)))
 
 (cl-defmethod project-root ((project (head :gtagsroot)))
   "Root for PROJECT."
@@ -299,13 +297,11 @@ Return as a list of xref location objects."
 	 (remote (file-remote-p root))
 	 (results (mapcan
 		   (lambda (dir)
-		     (when-let* ((tdir (file-truename dir))
-				 ((string-prefix-p root tdir)))
-		       (mapcar (lambda (file)
-				 (concat remote file)) ;; Add remote prefix
+		     (when (string-prefix-p root dir)
+		       (mapcar (lambda (file) (concat remote file)) ;; Add remote prefix
 			       (gtags-mode--exec-sync
 				'("--path-style=absolute" "--path")
-				(string-remove-prefix root tdir)))))
+				(string-remove-prefix root dir)))))
 		   (or dirs `(,root)))))
     (if (> (length dirs) 1) (delete-dups results) results)))
 
