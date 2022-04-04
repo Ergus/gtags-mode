@@ -211,7 +211,8 @@ name, code, file, line."
 				(string-to-number (match-string-no-properties 3 line))))) ;; line
 		   (gtags-mode--exec-sync
 		    (append args gtags-mode--output-format-options) symbol)))
-    (error "Calling gtags-mode--filter-find-symbol without GTAGSROOT")))
+    (error "Calling gtags-mode--filter-find-symbol without GTAGSROOT")
+    nil))
 
 (defun gtags-mode--update-buffers-plist ()
   "Actions to perform after creating a database.
