@@ -45,7 +45,7 @@
   :type 'string
   :local t)
 
-(defcustom gtags-mode-lighter "Gtags"
+(defcustom gtags-mode-lighter " Gtags"
   "Gtags executable."
   :type 'string
   :risky t)
