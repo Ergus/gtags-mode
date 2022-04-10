@@ -226,6 +226,8 @@ This iterates over the buffers and tries to reset
 	(gtags-mode--local-plist)))))
 
 ;; Interactive commands ==============================================
+
+;;;###autoload
 (defun gtags-mode-create (root-dir)
   "Create a GLOBAL GTAGS file in ROOT-DIR asynchronously."
   (interactive "DCreate GLOBAL files in directory: ")
