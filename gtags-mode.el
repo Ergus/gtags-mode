@@ -151,22 +151,20 @@ On success return a list of strings or nil if any error occurred."
 					  (point-min)
 					  (point-max))) t)
 	    (message "Global sync error output:\n%s" (buffer-string))
-	    (message "Sync global %s: exited abnormally with code %s" cargs status)
+	    (message "Sync %s %s: exited abnormally with code %s" cmd cargs status)
 	    nil)))
     (message "Can't start sync %s subprocess" cmd)
     nil))
 
 ;; Utilities functions (a bit less low level) ========================
 (defun gtags-mode--get-plist (dir)
-  "Return the plist for DIRECTORY from `gtags-mode--alist'."
-  (catch 'found
-    (dolist (plist gtags-mode--alist)
-      (when (string-prefix-p (plist-get plist :gtagsroot) dir)
-	(throw 'found plist)))
-    nil))
+  "Return the plist for DIR from `gtags-mode--alist'."
+  (seq-find (lambda (plist)
+	      (string-prefix-p (plist-get plist :gtagsroot) dir))
+	    gtags-mode--alist))
 
 (defun gtags-mode--create-plist (dir)
-  "Return dbpath for DIRECTORY or nil if none."
+  "Return dbpath for DIR or nil if none."
   (when-let* ((default-directory dir)
 	      (root (car (gtags-mode--exec-sync '("--print-dbpath")))))
     (setq root (concat (file-remote-p default-directory) root))
