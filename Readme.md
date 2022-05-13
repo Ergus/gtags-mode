@@ -36,8 +36,8 @@ or simply
 
 ```elisp
 (unless (fboundp 'gtags-mode)
-	(autoload #´gtags-mode "gtags-mode" nil t))
-(add-hook 'emacs-startup-hook #´gtags-mode)
+	(autoload #'gtags-mode "gtags-mode" nil t))
+(add-hook 'emacs-startup-hook #'gtags-mode)
 ```
 
 There are only 3 extra commands that the user may need to know:
