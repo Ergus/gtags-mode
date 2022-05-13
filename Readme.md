@@ -26,6 +26,20 @@ Usage
 Just load and enable the mode: `gtags-mode` or call it in a hook as
 usual. The mode is a global-minor-mode.
 
+With `use-packages`
+
+```elisp
+(use-package gtags-mode
+  :hook ((emacs-startup . gtags-mode)))
+```
+or simply
+
+```elisp
+(unless (fboundp 'gtags-mode)
+	(autoload #´gtags-mode "gtags-mode" nil t))
+(add-hook 'emacs-startup-hook #´gtags-mode)
+```
+
 There are only 3 extra commands that the user may need to know:
 
 - **gtags-mode** : To enable the global minor mode.
@@ -48,3 +62,4 @@ per individual hosts or users if needed.
 
 The custom variable **gtags-mode-lighter** can be used to change the
 default mode-line message to use when the mode is enabled.
+
