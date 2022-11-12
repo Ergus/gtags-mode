@@ -46,6 +46,7 @@
 
 (require 'xref)
 (require 'files-x)
+(eval-when-compile (require 'subr-x))
 
 (defgroup gtags-mode nil
   "GNU Global group for xref."
@@ -129,7 +130,7 @@ This is the sentinel set in `gtags-mode--exec-async'."
     (with-current-buffer (process-buffer process)      ;; In failure print error
       (while (accept-process-output process))
       (message "Global async error output:\n%s" (buffer-string))))
-  (message "Async %s: %s" (process-get process :command) event)) ;; Notify always
+  (message "Async %s: %s" (process-get process :command) (string-trim event))) ;; Always notify
 
 (defsubst gtags-mode--quote (args symbol)
   "Pre-process ARGS and quote SYMBOL."
