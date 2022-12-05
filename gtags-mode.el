@@ -63,7 +63,7 @@
   :local t)
 
 (defcustom gtags-mode-lighter " Gtags"
-  "Gtags executable."
+  "The text displayed in the mode line."
   :type 'string
   :risky t)
 
