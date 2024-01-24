@@ -259,7 +259,7 @@ This iterates over the buffers and tries to reset
 ;; Hooks =============================================================
 (defun gtags-mode--after-save-hook ()
   "After save hook to update GLOBAL database with changed data."
-  (when (and buffer-file-name (gtags-mode--local-plist))
+  (when (and buffer-file-name (gtags-mode--get-plist buffer-file-name))
     (gtags-mode--exec-async
      'gtags-mode--global
      '("--single-update") (file-name-nondirectory buffer-file-name))))
