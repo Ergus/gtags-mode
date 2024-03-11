@@ -314,6 +314,7 @@ Return as a list of xref location objects."
 (cl-defmethod project-files ((project (head :gtagsroot)) &optional dirs)
   "List files inside all the PROJECT or in DIRS if specified."
   (let* ((root (project-root project))
+	 (default-directory root)
 	 (results (mapcan
 		   (lambda (dir)
 		     (when (string-prefix-p root dir)
