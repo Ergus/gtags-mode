@@ -5,7 +5,7 @@
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
-;; Version: 1.1
+;; Version: 1.2
 ;; Package-Requires: ((emacs "28"))
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -328,14 +328,15 @@ Return as a list of xref location objects."
 
 (cl-defmethod project-buffers ((project (head :gtagsroot)))
   "Return the list of all live buffers that belong to PROJECT."
-  (mapcar (lambda (buff)
-	    (cond
-	     ((eq (buffer-local-value 'gtags-mode--plist buff) project) buff)
-	     ((local-variable-p 'gtags-mode--plist buff) nil)
-	     (t (with-current-buffer buff
-		  (when (eq (gtags-mode--local-plist) project)
-		    (current-buffer))))))
-	  (buffer-list)))
+  (delq nil
+	(mapcar (lambda (buff)
+		  (cond
+		   ((eq (buffer-local-value 'gtags-mode--plist buff) project) buff)
+		   ((local-variable-p 'gtags-mode--plist buff) nil)
+		   (t (with-current-buffer buff
+			(when (eq (gtags-mode--local-plist) project)
+			  (current-buffer))))))
+		(buffer-list))))
 
 ;; Completion-at-point-function (capf) ===============================
 (defun gtags-mode-completion-function ()
