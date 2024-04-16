@@ -184,7 +184,8 @@ On success return a list of strings or nil if any error occurred."
   "Return dbpath for DIR or nil if none."
   (when-let* ((default-directory dir)
 	      (root (car (gtags-mode--exec-sync '("--print-dbpath")))))
-    (setq root (concat (file-remote-p default-directory) root))
+    (setq root (concat (file-remote-p default-directory) ;; add remote prefix if remote
+		       (file-name-as-directory root)))   ;; add a / at the end is missing
     (or (gtags-mode--get-plist root)   ;; already exist
 	(car (push `(:gtagsroot ,root :cache nil) gtags-mode--alist)))))
 
