@@ -188,20 +188,21 @@ On success return a list of strings or nil if any error occurred."
     (or (gtags-mode--get-plist root)   ;; already exist
 	(car (push `(:gtagsroot ,root :cache nil) gtags-mode--alist)))))
 
-(defun gtags-mode--local-plist ()
+(defun gtags-mode--local-plist (&optional dir)
   "Set and return the buffer local value of `gtags-mode--plist'."
   (if (local-variable-p 'gtags-mode--plist)
       gtags-mode--plist
-    (gtags-mode--set-connection-locals)
-    (setq-local gtags-mode--plist (or (gtags-mode--get-plist default-directory)
-				      (gtags-mode--create-plist default-directory)))))
+    (let ((default-directory (or dir default-directory)))
+      (gtags-mode--set-connection-locals)
+      (setq-local gtags-mode--plist (or (gtags-mode--get-plist default-directory)
+					(gtags-mode--create-plist default-directory))))))
 
 (defun gtags-mode--list-completions (prefix)
   "Get the list of completions for PREFIX.
 When PREFIX is nil or empty; return the entire list of
 completions usually from the cache when possible."
   (cond ;; TODO: use with-memoization in the future it will be on emacs 29.1
-   ((not (gtags-mode--local-plist))
+   ((not (gtags-mode--local-plist default-directory))
     (error "Calling `gtags-mode--list-completions' with no gtags-mode--plist"))
    ((and (stringp prefix) (not (string-blank-p prefix))
 	 (gtags-mode--exec-sync '("--ignore-case" "--completion") prefix)))
@@ -214,7 +215,7 @@ completions usually from the cache when possible."
 Returns the results as a list of CREATORS outputs similar to
 `mapcar'.  Creator should be a function with 4 input arguments:
 name, code, file, line."
-  (if-let ((root (plist-get (gtags-mode--local-plist) :gtagsroot)))
+  (if-let ((root (plist-get (gtags-mode--local-plist default-directory) :gtagsroot)))
       (delete nil (mapcar
 		   (lambda (line)
 		     (when (string-match gtags-mode--output-format-regex line)
@@ -238,7 +239,7 @@ This iterates over the buffers and tries to reset
       (with-current-buffer buff
 	(gtags-mode--set-connection-locals)
 	(kill-local-variable 'gtags-mode--plist) ;; kill the local to reset it
-	(gtags-mode--local-plist)))))
+	(gtags-mode--local-plist default-directory)))))
 
 ;; Interactive commands ==============================================
 
@@ -253,7 +254,7 @@ This iterates over the buffers and tries to reset
 (defun gtags-mode-update ()
   "Update GLOBAL project database."
   (interactive)
-  (when (gtags-mode--local-plist)
+  (when (gtags-mode--local-plist default-directory)
     (gtags-mode--exec-async 'gtags-mode--global '("--update"))))
 
 ;; Hooks =============================================================
@@ -296,7 +297,7 @@ Return as a list of xref location objects."
 
 (defun gtags-mode--imenu-advice ()
   "Make imenu use Global."
-  (when (and buffer-file-name (gtags-mode--local-plist))
+  (when (and buffer-file-name (gtags-mode--local-plist default-directory))
     (gtags-mode--filter-find-symbol
      '("--file") (file-name-nondirectory buffer-file-name)
      (lambda (name _code _file line)
@@ -334,14 +335,14 @@ Return as a list of xref location objects."
 		   ((eq (buffer-local-value 'gtags-mode--plist buff) project) buff)
 		   ((local-variable-p 'gtags-mode--plist buff) nil)
 		   (t (with-current-buffer buff
-			(when (eq (gtags-mode--local-plist) project)
+			(when (eq (gtags-mode--local-plist default-directory) project)
 			  (current-buffer))))))
 		(buffer-list))))
 
 ;; Completion-at-point-function (capf) ===============================
 (defun gtags-mode-completion-function ()
   "Generate completion list."
-  (if (gtags-mode--local-plist)
+  (if (gtags-mode--local-plist default-directory)
       (when-let ((bounds (bounds-of-thing-at-point 'symbol)))
 	(list (car bounds) (point)
 	      (completion-table-dynamic #'gtags-mode--list-completions)
@@ -356,7 +357,7 @@ rely on their original or user configured default behavior."
   :lighter gtags-mode-lighter
   (cond
    (gtags-mode
-    (add-hook 'project-find-functions #'gtags-mode-project-backend)
+    (add-hook 'project-find-functions #'gtags-mode--local-plist)
     (add-hook 'xref-backend-functions #'gtags-mode--local-plist)
     (add-hook 'completion-at-point-functions #'gtags-mode-completion-function)
     (add-hook 'after-save-hook #'gtags-mode--after-save-hook)
