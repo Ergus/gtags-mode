@@ -321,7 +321,7 @@ Return as a list of xref location objects."
 		   (lambda (dir)
 		     (when (string-prefix-p root dir)
 		       (mapcar (lambda (file)
-				 (concat root (substring-no-properties file 1)))
+				 (expand-file-name file root))
 			       (gtags-mode--exec-sync
 				'("--path-style=through" "--path")
 				(string-remove-prefix root dir)))))
