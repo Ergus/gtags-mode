@@ -67,6 +67,11 @@
   :type 'string
   :risky t)
 
+(defcustom gtags-mode-verbose 2
+  "The text displayed in the mode line."
+  :type 'natnum
+  :risky t)
+
 (defvar gtags-mode--alist nil
   "Full list of Global roots.
 The address is absolute for remote hosts.")
@@ -84,6 +89,11 @@ The address is absolute for remote hosts.")
 (defconst gtags-mode--output-format-options
   '("--result=cscope" "--path-style=through" "--color=never")
   "Command line options to use with `gtags-mode--output-format-regex'.")
+
+(defsubst gtags-mode--message (level format-string &rest args)
+  "Print log messages when the `gtags-mode-verbose' is greater than LEVEL."
+  (when (>= gtags-mode-verbose level)
+    (apply #'message (concat "gtags-mode: " format-string) args)))
 
 ;; Connection functions
 (defun gtags-mode--set-connection-locals ()
@@ -129,10 +139,11 @@ This is the sentinel set in `gtags-mode--exec-async'."
 	      (plist-put gtags-mode--plist :cache nil)))))
     (with-current-buffer (process-buffer process)      ;; In failure print error
       (while (accept-process-output process))
-      (message "Global async error output:\n%s"
-	       (string-trim
-		(buffer-substring-no-properties (point-min) (point-max))))))
-  (message "Async %s: %s" (process-get process :command) (string-trim event))) ;; Always notify
+      (gtags-mode--message 1 "Global async error output:\n%s"
+			   (string-trim
+			    (buffer-substring-no-properties (point-min) (point-max))))))
+  (gtags-mode--message 2 "Async %s: %s"
+		       (process-get process :command) (string-trim event))) ;; Always notify
 
 (defsubst gtags-mode--quote (args symbol)
   "Pre-process ARGS and quote SYMBOL."
@@ -155,7 +166,7 @@ Returns the process object."
 	;; In future not needed with `remote-commands'.
 	(set-process-plist pr `(:parent-buffer ,(current-buffer) :command ,command))
 	pr)
-    (message "Can't start async %s subprocess" cmd)
+    (gtags-mode--message 1 "Can't start async %s subprocess" cmd)
     nil))
 
 (defun gtags-mode--exec-sync (args &optional target)
@@ -169,10 +180,10 @@ On success return a list of strings or nil if any error occurred."
 			(buffer-substring-no-properties (point-min) (point-max)))))
 	  (if (eq status 0)
 	      (string-lines output t)
-	    (message "Global sync error output:\n%s" output)
-	    (message "Sync %s %s: exited abnormally with code %s" cmd cargs status)
+	    (gtags-mode--message 1 "Global sync error output:\n%s" output)
+	    (gtags-mode--message 1 "Sync %s %s: exited abnormally with code %s" cmd cargs status)
 	    nil)))
-    (message "Can't start sync %s subprocess" cmd)
+    (gtags-mode--message 1 "Can't start sync %s subprocess" cmd)
     nil))
 
 ;; Utilities functions (a bit less low level) ========================
@@ -188,6 +199,7 @@ On success return a list of strings or nil if any error occurred."
 	      (root (car (gtags-mode--exec-sync '("--print-dbpath")))))
     (setq root (concat (file-remote-p default-directory) ;; add remote prefix if remote
 		       (file-name-as-directory root)))   ;; add a / at the end is missing
+    (display-warning 'gtags-mode "Option HEEE" :info)
     (or (gtags-mode--get-plist root)   ;; already exist
 	(car (push `(:gtagsroot ,root :cache nil) gtags-mode--alist)))))
 
@@ -197,8 +209,14 @@ On success return a list of strings or nil if any error occurred."
       gtags-mode--plist
     (let ((default-directory (or dir default-directory)))
       (gtags-mode--set-connection-locals)
-      (setq-local gtags-mode--plist (or (gtags-mode--get-plist default-directory)
-					(gtags-mode--create-plist default-directory))))))
+      (setq-local gtags-mode--plist
+		  (or (gtags-mode--get-plist default-directory)
+		      ;; Heuristic to create new plists only when visiting real files
+		      ;; This optimizes when there is not tags file to avoid calling
+		      ;; the external process repeatedly i.e in magit buffers that are
+		      ;; regenerated every time and forgets the local variables
+		      (and (buffer-file-name)
+			   (gtags-mode--create-plist default-directory)))))))
 
 (defun gtags-mode--list-completions (prefix)
   "Get the list of completions for PREFIX.
