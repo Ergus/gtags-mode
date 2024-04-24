@@ -63,3 +63,8 @@ per individual hosts or users if needed.
 The custom variable **gtags-mode-lighter** can be used to change the
 default mode-line message to use when the mode is enabled.
 
+The verbosity of messages printed can be controlled with
+**gtags-mode-verbose-level** higher verbose level implies more
+messages and 0 prints no messages at all (not recommended!!). The most
+verbose messages are not printed in the echo area, but only in the
+\*Messages\* buffer.

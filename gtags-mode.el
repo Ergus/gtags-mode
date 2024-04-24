@@ -5,7 +5,7 @@
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
-;; Version: 1.3
+;; Version: 1.4
 ;; Package-Requires: ((emacs "28"))
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -67,7 +67,7 @@
   :type 'string
   :risky t)
 
-(defcustom gtags-mode-verbose 2
+(defcustom gtags-mode-verbose-level 2
   "The text displayed in the mode line."
   :type 'natnum
   :risky t)
@@ -91,9 +91,13 @@ The address is absolute for remote hosts.")
   "Command line options to use with `gtags-mode--output-format-regex'.")
 
 (defsubst gtags-mode--message (level format-string &rest args)
-  "Print log messages when the `gtags-mode-verbose' is greater than LEVEL."
-  (when (>= gtags-mode-verbose level)
-    (apply #'message (concat "gtags-mode: " format-string) args)))
+  "Print log messages when the `gtags-mode-verbose' is greater than LEVEL.
+Message with lower verbose level are more important. Messages with level
+lower than 2 are also printed in the echo area as they are considered
+warnings or errors."
+  (when (>= gtags-mode-verbose-level level)
+    (let ((inhibit-message (> level 1)))
+      (apply #'message (concat "gtags-mode: " format-string) args))))
 
 ;; Connection functions
 (defun gtags-mode--set-connection-locals ()
@@ -199,7 +203,7 @@ On success return a list of strings or nil if any error occurred."
 	      (root (car (gtags-mode--exec-sync '("--print-dbpath")))))
     (setq root (concat (file-remote-p default-directory) ;; add remote prefix if remote
 		       (file-name-as-directory root)))   ;; add a / at the end is missing
-    (display-warning 'gtags-mode "Option HEEE" :info)
+    (gtags-mode--message 2 "Gtags file in %s applies to default-directory: %s" root dir)
     (or (gtags-mode--get-plist root)   ;; already exist
 	(car (push `(:gtagsroot ,root :cache nil) gtags-mode--alist)))))
 
