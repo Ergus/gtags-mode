@@ -5,7 +5,7 @@
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
-;; Version: 1.2
+;; Version: 1.3
 ;; Package-Requires: ((emacs "28"))
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -129,7 +129,9 @@ This is the sentinel set in `gtags-mode--exec-async'."
 	      (plist-put gtags-mode--plist :cache nil)))))
     (with-current-buffer (process-buffer process)      ;; In failure print error
       (while (accept-process-output process))
-      (message "Global async error output:\n%s" (buffer-string))))
+      (message "Global async error output:\n%s"
+	       (string-trim
+		(buffer-substring-no-properties (point-min) (point-max))))))
   (message "Async %s: %s" (process-get process :command) (string-trim event))) ;; Always notify
 
 (defsubst gtags-mode--quote (args symbol)
@@ -162,12 +164,12 @@ On success return a list of strings or nil if any error occurred."
   (if-let ((cmd gtags-mode--global) ;; Required for with-temp-buffer
 	   (cargs (gtags-mode--quote args target)))
       (with-temp-buffer
-	(let ((status (apply #'process-file cmd nil (current-buffer) nil cargs)))
+	(let* ((status (apply #'process-file cmd nil (current-buffer) nil cargs))
+	       (output (string-trim
+			(buffer-substring-no-properties (point-min) (point-max)))))
 	  (if (eq status 0)
-	      (string-lines (string-trim (buffer-substring-no-properties
-					  (point-min)
-					  (point-max))) t)
-	    (message "Global sync error output:\n%s" (buffer-string))
+	      (string-lines output t)
+	    (message "Global sync error output:\n%s" output)
 	    (message "Sync %s %s: exited abnormally with code %s" cmd cargs status)
 	    nil)))
     (message "Can't start sync %s subprocess" cmd)
