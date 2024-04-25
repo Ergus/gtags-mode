@@ -5,7 +5,7 @@
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
-;; Version: 1.4
+;; Version: 1.5
 ;; Package-Requires: ((emacs "28"))
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -149,18 +149,13 @@ This is the sentinel set in `gtags-mode--exec-async'."
   (gtags-mode--message 2 "Async %s: %s"
 		       (process-get process :command) (string-trim event))) ;; Always notify
 
-(defsubst gtags-mode--quote (args symbol)
-  "Pre-process ARGS and quote SYMBOL."
-  (append args (and (stringp symbol) (not (string-blank-p symbol))
-		    `(,(shell-quote-argument symbol)))))
-
-(defun gtags-mode--exec-async (cmd args &optional target)
+(defun gtags-mode--exec-async (cmd &rest args)
   "Run CMD with ARGS on TARGET asynchronously.
 Start an asynchronous process and sets
 `gtags-mode--exec-async-sentinel' as the process sentinel.
 Returns the process object."
   (if-let* ((cmd (buffer-local-value cmd (current-buffer)))
-	    (command (gtags-mode--quote (append `(,cmd) args) target))
+	    (command (append `(,cmd) args))
 	    (pr (make-process :name (format "%s-async" cmd)
 			      :buffer (generate-new-buffer " *temp*" t)
 			      :command command
@@ -173,19 +168,18 @@ Returns the process object."
     (gtags-mode--message 1 "Can't start async %s subprocess" cmd)
     nil))
 
-(defun gtags-mode--exec-sync (args &optional target)
+(defun gtags-mode--exec-sync (&rest args)
   "Run global with ARGS on TARGET synchronously.
 On success return a list of strings or nil if any error occurred."
-  (if-let ((cmd gtags-mode--global) ;; Required for with-temp-buffer
-	   (cargs (gtags-mode--quote args target)))
+  (if-let ((cmd gtags-mode--global)) ;; Required for with-temp-buffer
       (with-temp-buffer
-	(let* ((status (apply #'process-file cmd nil (current-buffer) nil cargs))
+	(let* ((status (apply #'process-file cmd nil (current-buffer) nil args))
 	       (output (string-trim
 			(buffer-substring-no-properties (point-min) (point-max)))))
 	  (if (eq status 0)
 	      (string-lines output t)
 	    (gtags-mode--message 1 "Global sync error output:\n%s" output)
-	    (gtags-mode--message 1 "Sync %s %s: exited abnormally with code %s" cmd cargs status)
+	    (gtags-mode--message 1 "Sync %s %s: exited abnormally with code %s" cmd args status)
 	    nil)))
     (gtags-mode--message 1 "Can't start sync %s subprocess" cmd)
     nil))
@@ -200,7 +194,7 @@ On success return a list of strings or nil if any error occurred."
 (defun gtags-mode--create-plist (dir)
   "Return dbpath for DIR or nil if none."
   (when-let* ((default-directory dir)
-	      (root (car (gtags-mode--exec-sync '("--print-dbpath")))))
+	      (root (car (gtags-mode--exec-sync "--print-dbpath"))))
     (setq root (concat (file-remote-p default-directory) ;; add remote prefix if remote
 		       (file-name-as-directory root)))   ;; add a / at the end is missing
     (gtags-mode--message 2 "Gtags file in %s applies to default-directory: %s" root dir)
@@ -230,9 +224,9 @@ completions usually from the cache when possible."
    ((not (gtags-mode--local-plist default-directory))
     (error "Calling `gtags-mode--list-completions' with no gtags-mode--plist"))
    ((and (stringp prefix) (not (string-blank-p prefix))
-	 (gtags-mode--exec-sync '("--ignore-case" "--completion") prefix)))
+	 (gtags-mode--exec-sync "--ignore-case" "--completion" prefix)))
    ((plist-get gtags-mode--plist :cache))
-   (t (plist-put gtags-mode--plist :cache (gtags-mode--exec-sync '("--completion")))
+   (t (plist-put gtags-mode--plist :cache (gtags-mode--exec-sync "--completion"))
       (plist-get gtags-mode--plist :cache))))
 
 (defun gtags-mode--filter-find-symbol (args symbol creator)
@@ -250,8 +244,8 @@ name, code, file, line."
 				(concat root (substring-no-properties
 					      line (1+ (match-beginning 1)) (match-end 1))) ;; file
 				(string-to-number (match-string-no-properties 3 line))))) ;; line
-		   (gtags-mode--exec-sync
-		    (append args gtags-mode--output-format-options) symbol)))
+		   (apply #'gtags-mode--exec-sync
+		    (append args gtags-mode--output-format-options `(,symbol)) )))
     (error "Calling gtags-mode--filter-find-symbol without GTAGSROOT")
     nil))
 
@@ -273,14 +267,14 @@ This iterates over the buffers and tries to reset
   "Create a GLOBAL GTAGS file in ROOT-DIR asynchronously."
   (interactive "DCreate GLOBAL files in directory: ")
   (when-let* ((default-directory root-dir)
-	      (pr (gtags-mode--exec-async 'gtags-mode--gtags nil)))
+	      (pr (gtags-mode--exec-async 'gtags-mode--gtags)))
     (process-put pr :extra-sentinel #'gtags-mode--update-buffers-plist)))
 
 (defun gtags-mode-update ()
   "Update GLOBAL project database."
   (interactive)
   (when (gtags-mode--local-plist default-directory)
-    (gtags-mode--exec-async 'gtags-mode--global '("--update"))))
+    (gtags-mode--exec-async 'gtags-mode--global "--update")))
 
 ;; Hooks =============================================================
 (defun gtags-mode--after-save-hook ()
@@ -288,7 +282,7 @@ This iterates over the buffers and tries to reset
   (when (and buffer-file-name (gtags-mode--get-plist buffer-file-name))
     (gtags-mode--exec-async
      'gtags-mode--global
-     '("--single-update") (file-name-nondirectory buffer-file-name))))
+     "--single-update" (file-name-nondirectory buffer-file-name))))
 
 ;; xref integration ==================================================
 (defun gtags-mode--xref-find-symbol (args symbol)
@@ -341,15 +335,16 @@ Return as a list of xref location objects."
   "List files inside all the PROJECT or in DIRS if specified."
   (let* ((root (project-root project))
 	 (default-directory root)
-	 (results (mapcan
-		   (lambda (dir)
-		     (when (string-prefix-p root dir)
-		       (mapcar (lambda (file)
-				 (expand-file-name file root))
-			       (gtags-mode--exec-sync
-				'("--path-style=through" "--path")
-				(string-remove-prefix root dir)))))
-		   (or dirs `(,root)))))
+	 (results
+	  (mapcan
+	   (lambda (dir)
+	     (when (string-prefix-p root dir)
+	       (mapcar (lambda (file)
+			 (expand-file-name file root))
+		       (gtags-mode--exec-sync
+			"--path-style=through" "--path"
+			(string-remove-prefix root dir)))))
+	   (or dirs `(,root)))))
     (if (> (length dirs) 1) (delete-dups results) results)))
 
 (cl-defmethod project-buffers ((project (head :gtagsroot)))
