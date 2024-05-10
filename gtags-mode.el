@@ -5,7 +5,7 @@
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
-;; Version: 1.5
+;; Version: 1.6
 ;; Package-Requires: ((emacs "28"))
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -201,20 +201,24 @@ On success return a list of strings or nil if any error occurred."
     (or (gtags-mode--get-plist root)   ;; already exist
 	(car (push `(:gtagsroot ,root :cache nil) gtags-mode--alist)))))
 
+(defun gtags-mode--set-local-plist (&optional dir)
+  "Set and return the buffer local value of `gtags-mode--plist'."
+  (let ((default-directory (file-truename (or dir default-directory))))
+    (gtags-mode--set-connection-locals)
+    (setq-local gtags-mode--plist
+		(or (gtags-mode--get-plist default-directory)
+		    ;; Heuristic to create new plists only when visiting real files
+		    ;; This optimizes when there is not tags file to avoid calling
+		    ;; the external process repeatedly i.e in magit buffers that are
+		    ;; regenerated every time and forgets the local variables
+		    (when (buffer-file-name)
+		      (gtags-mode--create-plist default-directory))))))
+
 (defun gtags-mode--local-plist (&optional dir)
   "Set and return the buffer local value of `gtags-mode--plist'."
   (if (local-variable-p 'gtags-mode--plist)
       gtags-mode--plist
-    (let ((default-directory (or dir default-directory)))
-      (gtags-mode--set-connection-locals)
-      (setq-local gtags-mode--plist
-		  (or (gtags-mode--get-plist default-directory)
-		      ;; Heuristic to create new plists only when visiting real files
-		      ;; This optimizes when there is not tags file to avoid calling
-		      ;; the external process repeatedly i.e in magit buffers that are
-		      ;; regenerated every time and forgets the local variables
-		      (and (buffer-file-name)
-			   (gtags-mode--create-plist default-directory)))))))
+    (gtags-mode--set-local-plist dir)))
 
 (defun gtags-mode--list-completions (prefix)
   "Get the list of completions for PREFIX.
@@ -278,8 +282,13 @@ This iterates over the buffers and tries to reset
 
 ;; Hooks =============================================================
 (defun gtags-mode--after-save-hook ()
-  "After save hook to update GLOBAL database with changed data."
-  (when (and buffer-file-name (gtags-mode--get-plist buffer-file-name))
+  "After save hook to update GLOBAL database with changed data.
+This function re-checks the local value for gtags-mode--plist or tries
+to set it.  This is needed when saving new created files because they
+won't have `buffer-file-name' but will just acquire one."
+  (when (and buffer-file-name
+	     (or gtags-mode--plist
+		 (gtags-mode--set-local-plist buffer-file-name)))
     (gtags-mode--exec-async
      'gtags-mode--global
      "--single-update" (file-name-nondirectory buffer-file-name))))
@@ -323,9 +332,6 @@ Return as a list of xref location objects."
        (list name line #'gtags-mode--imenu-goto-function)))))
 
 ;; project integration ===============================================
-(defun gtags-mode-project-backend (dir)
-  "Return the project for DIR as an array."
-  (gtags-mode--get-plist (file-truename dir)))
 
 (cl-defmethod project-root ((project (head :gtagsroot)))
   "Root for PROJECT."
@@ -383,7 +389,7 @@ rely on their original or user configured default behavior."
     (add-hook 'after-save-hook #'gtags-mode--after-save-hook)
     (advice-add imenu-create-index-function :before-until #'gtags-mode--imenu-advice))
    (t
-    (remove-hook 'project-find-functions #'gtags-mode-project-backend)
+    (remove-hook 'project-find-functions #'gtags-mode--local-plist)
     (remove-hook 'xref-backend-functions #'gtags-mode--local-plist)
     (remove-hook 'completion-at-point-functions #'gtags-mode-completion-function)
     (remove-hook 'after-save-hook #'gtags-mode--after-save-hook)
