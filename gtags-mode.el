@@ -62,6 +62,11 @@
   :type 'string
   :local t)
 
+(defcustom gtags-mode-update-args ""
+  "Extra arguments to use when updating the database."
+  :type 'string
+  :local t)
+
 (defcustom gtags-mode-lighter " Gtags"
   "The text displayed in the mode line."
   :type 'string
@@ -155,7 +160,7 @@ Start an asynchronous process and sets
 `gtags-mode--exec-async-sentinel' as the process sentinel.
 Returns the process object."
   (if-let* ((cmd (buffer-local-value cmd (current-buffer)))
-	    (command (append `(,cmd) args))
+	    (command (append `(,cmd) (string-split gtags-mode-update-args) args))
 	    (pr (make-process :name (format "%s-async" cmd)
 			      :buffer (generate-new-buffer " *temp*" t)
 			      :command command

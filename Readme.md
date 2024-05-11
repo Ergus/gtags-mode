@@ -68,3 +68,18 @@ The verbosity of messages printed can be controlled with
 messages and 0 prints no messages at all (not recommended!!). The most
 verbose messages are not printed in the echo area, but only in the
 \*Messages\* buffer.
+
+It is possible to pass extra arguments to update commands using the
+variable **gtags-mode-update-args**. Usually these can be used to use
+different **global** backends.  For example, to use *exuberant-gtags*
+instead of the default backend, the Arch Linux configuration is:
+
+```lisp
+(setq gtags-mode-update-args "--gtagsconf=/usr/share/gtags/gtags.conf --gtagslabel=universal-ctags")
+
+```
+
+This variable can be set in the
+[*.dir-locals*](https://www.gnu.org/software/emacs/manual/html_node/emacs/Directory-Variables.html)
+or as a
+[*connection-local-variable*](https://www.gnu.org/software/emacs/manual/html_node/elisp/Connection-Local-Variables.html)
