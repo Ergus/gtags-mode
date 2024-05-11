@@ -201,9 +201,9 @@ On success return a list of strings or nil if any error occurred."
     (or (gtags-mode--get-plist root)   ;; already exist
 	(car (push `(:gtagsroot ,root :cache nil) gtags-mode--alist)))))
 
-(defun gtags-mode--set-local-plist (&optional dir)
+(defun gtags-mode--set-local-plist (dir)
   "Set and return the buffer local value of `gtags-mode--plist'."
-  (let ((default-directory (file-truename (or dir default-directory))))
+  (let ((default-directory (file-truename dir)))
     (gtags-mode--set-connection-locals)
     (setq-local gtags-mode--plist
 		(or (gtags-mode--get-plist default-directory)
@@ -218,7 +218,7 @@ On success return a list of strings or nil if any error occurred."
   "Set and return the buffer local value of `gtags-mode--plist'."
   (if (local-variable-p 'gtags-mode--plist)
       gtags-mode--plist
-    (gtags-mode--set-local-plist dir)))
+    (gtags-mode--set-local-plist (or dir default-directory))))
 
 (defun gtags-mode--list-completions (prefix)
   "Get the list of completions for PREFIX.
@@ -288,7 +288,7 @@ to set it.  This is needed when saving new created files because they
 won't have `buffer-file-name' but will just acquire one."
   (when (and buffer-file-name
 	     (or gtags-mode--plist
-		 (gtags-mode--set-local-plist buffer-file-name)))
+		 (gtags-mode--set-local-plist default-directory)))
     (gtags-mode--exec-async
      'gtags-mode--global
      "--single-update" (file-name-nondirectory buffer-file-name))))
