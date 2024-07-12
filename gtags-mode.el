@@ -198,7 +198,12 @@ On success return a list of strings or nil if any error occurred."
 
 (defun gtags-mode--create-plist (dir)
   "Return dbpath for DIR or nil if none."
-  (when-let* ((default-directory dir)
+  ;; Heuristic to create new plists only when visiting real files
+  ;; This optimizes when there is not tags file to avoid calling
+  ;; the external process repeatedly i.e in magit buffers that are
+  ;; regenerated every time and forgets the local variables
+  (when-let* (((and gtags-mode--global buffer-file-name))
+	      (default-directory dir)
 	      (root (car (gtags-mode--exec-sync "--print-dbpath"))))
     (setq root (concat (file-remote-p default-directory) ;; add remote prefix if remote
 		       (file-name-as-directory root)))   ;; add a / at the end is missing
@@ -212,12 +217,7 @@ On success return a list of strings or nil if any error occurred."
     (gtags-mode--set-connection-locals)
     (setq-local gtags-mode--plist
 		(or (gtags-mode--get-plist default-directory)
-		    ;; Heuristic to create new plists only when visiting real files
-		    ;; This optimizes when there is not tags file to avoid calling
-		    ;; the external process repeatedly i.e in magit buffers that are
-		    ;; regenerated every time and forgets the local variables
-		    (when (buffer-file-name)
-		      (gtags-mode--create-plist default-directory))))))
+		    (gtags-mode--create-plist default-directory)))))
 
 (defun gtags-mode--local-plist (&optional dir)
   "Set and return the buffer local value of `gtags-mode--plist'."
