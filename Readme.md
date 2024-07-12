@@ -55,10 +55,17 @@ the global/gtags executable are not in the usual locations, so the
 user can set them. **gtags-mode-global-executable**
 **gtags-mode-gtags-executable** are buffer local configuration options
 to set the path or names in case the user needs it or the user setup
-is do special that the command *executable-find* fails searching.
+is do special that the command `executable-find` fails searching.
 
 TRAMP users can use *connection-local-variables* to set these values
 per individual hosts or users if needed.
+
+**gtags-mode-features** is the list of enabled features in
+gtags-mode. By default all the features: `(project xref completion
+imenu hooks)` are enabled. The user only needs to remove one of these
+entries and restart `gtags-mode` to disable it.
+TODO: Improve the custom type for this variable in order to restrict
+possible values.
 
 The custom variable **gtags-mode-lighter** can be used to change the
 default mode-line message to use when the mode is enabled.
@@ -67,7 +74,7 @@ The verbosity of messages printed can be controlled with
 **gtags-mode-verbose-level** higher verbose level implies more
 messages and 0 prints no messages at all (not recommended!!). The most
 verbose messages are not printed in the echo area, but only in the
-\*Messages\* buffer.
+`\*Messages\*` buffer.
 
 It is possible to pass extra arguments to update commands using the
 variable **gtags-mode-update-args**. Usually these can be used to use
