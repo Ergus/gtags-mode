@@ -195,6 +195,27 @@ On success return a list of strings or nil if any error occurred."
     (gtags-mode--message 1 "Can't start sync %s subprocess" cmd)
     nil))
 
+(defsubst gtags-mode--get-root (dir)
+  "Get the top dbpath given DIR.
+Includes the remote prefix concatenation when needed."
+  ;; The first check is an Heuristic to create new plists only when
+  ;; visiting real files This optimizes when there is not tags file to
+  ;; avoid calling the external process repeatedly i.e in magit
+  ;; buffers that are regenerated every time and forgets the local
+  ;; variables
+  (when-let* (((and gtags-mode--global buffer-file-name))
+	      ;; Then suppress any warning when searching the root
+	      ;; because `global' returns an error value when there is
+	      ;; not dbpath found.
+	      (gtags-mode-verbose-level 0)
+	      (default-directory dir)
+	      ;; The check id independent of the concat because when
+	      ;; empty (no root) on remote systems, the concat will
+	      ;; returns always a non nil value.
+	      (root (car (gtags-mode--exec-sync "--print-dbpath"))))
+    (concat (file-remote-p dir)              ;; add remote prefix if remote
+	    (file-name-as-directory root)))) ;; add a / at the end if missing
+
 ;; Utilities functions (a bit less low level) ========================
 (defun gtags-mode--get-plist (dir)
   "Return the plist for DIR from `gtags-mode--alist'."
@@ -204,15 +225,7 @@ On success return a list of strings or nil if any error occurred."
 
 (defun gtags-mode--create-plist (dir)
   "Return dbpath for DIR or nil if none."
-  ;; Heuristic to create new plists only when visiting real files
-  ;; This optimizes when there is not tags file to avoid calling
-  ;; the external process repeatedly i.e in magit buffers that are
-  ;; regenerated every time and forgets the local variables
-  (when-let* (((and gtags-mode--global buffer-file-name))
-	      (default-directory dir)
-	      (root (car (gtags-mode--exec-sync "--print-dbpath"))))
-    (setq root (concat (file-remote-p default-directory) ;; add remote prefix if remote
-		       (file-name-as-directory root)))   ;; add a / at the end is missing
+  (when-let ((root (gtags-mode--get-root dir)))
     (gtags-mode--message 2 "Gtags file in %s applies to default-directory: %s" root dir)
     (or (gtags-mode--get-plist root)   ;; already exist
 	(car (push `(:gtagsroot ,root :cache nil) gtags-mode--alist)))))
