@@ -72,6 +72,12 @@
   :type 'string
   :risky t)
 
+(defcustom gtags-mode-features '(project xref completion imenu hooks)
+  "The list of features enabled in gtags-mode.
+This variable must be set before enabling gtags-mode"
+  :type '(repeat symbol)
+  :risky t)
+
 (defcustom gtags-mode-verbose-level 2
   "The text displayed in the mode line."
   :type 'natnum
@@ -379,6 +385,11 @@ Return as a list of xref location objects."
 	      (completion-table-dynamic #'gtags-mode--list-completions)
 	      :exclusive 'no))))
 
+(defmacro gtags-mode--with-feature (feature &rest body)
+  (declare (indent 1) (debug t))
+  `(when (memq ,feature gtags-mode-features)
+     ,@body))
+
 ;;;###autoload
 (define-minor-mode gtags-mode
   "Use GNU Global as backend for project, xref, capf and imenu.
@@ -388,11 +399,16 @@ rely on their original or user configured default behavior."
   :lighter gtags-mode-lighter
   (cond
    (gtags-mode
-    (add-hook 'project-find-functions #'gtags-mode--local-plist)
-    (add-hook 'xref-backend-functions #'gtags-mode--local-plist)
-    (add-hook 'completion-at-point-functions #'gtags-mode-completion-function)
-    (add-hook 'after-save-hook #'gtags-mode--after-save-hook)
-    (advice-add imenu-create-index-function :before-until #'gtags-mode--imenu-advice))
+    (gtags-mode--with-feature 'project
+      (add-hook 'project-find-functions #'gtags-mode--local-plist))
+    (gtags-mode--with-feature 'xref
+      (add-hook 'xref-backend-functions #'gtags-mode--local-plist))
+    (gtags-mode--with-feature 'completion
+      (add-hook 'completion-at-point-functions #'gtags-mode-completion-function))
+    (gtags-mode--with-feature 'hooks
+      (add-hook 'after-save-hook #'gtags-mode--after-save-hook))
+    (gtags-mode--with-feature 'imenu
+      (advice-add imenu-create-index-function :before-until #'gtags-mode--imenu-advice)))
    (t
     (remove-hook 'project-find-functions #'gtags-mode--local-plist)
     (remove-hook 'xref-backend-functions #'gtags-mode--local-plist)
