@@ -254,7 +254,7 @@ name, code, file, line."
 					      line (1+ (match-beginning 1)) (match-end 1))) ;; file
 				(string-to-number (match-string-no-properties 3 line))))) ;; line
 		   (apply #'gtags-mode--exec-sync
-		    (append args gtags-mode--output-format-options `(,symbol)) )))
+		    (append gtags-mode--output-format-options args `(,symbol)) )))
     (error "Calling gtags-mode--filter-find-symbol without GTAGSROOT")
     nil))
 
@@ -317,7 +317,7 @@ Return as a list of xref location objects."
 
 (cl-defmethod xref-backend-references ((_backend (head :gtagsroot)) symbol)
   "List all referenced for SYMBOL."
-  (gtags-mode--xref-find-symbol '("--reference") symbol))
+  (gtags-mode--xref-find-symbol '("--reference" "--symbol") symbol))
 
 (cl-defmethod xref-backend-apropos ((_backend (head :gtagsroot)) symbol)
   "List grepped list of candidates SYMBOL."
