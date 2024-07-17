@@ -75,7 +75,11 @@
 (defcustom gtags-mode-features '(project xref completion imenu hooks)
   "The list of features enabled in gtags-mode.
 This variable must be set before enabling gtags-mode"
-  :type '(repeat symbol)
+  :type '(set (const project)
+              (const xref)
+              (const completion)
+              (const imenu)
+              (const hooks))
   :risky t)
 
 (defcustom gtags-mode-verbose-level 2
@@ -194,6 +198,8 @@ On success return a list of strings or nil if any error occurred."
 	    nil)))
     (gtags-mode--message 1 "Can't start sync %s subprocess" cmd)
     nil))
+
+
 
 (defsubst gtags-mode--get-root (dir)
   "Get the top dbpath given DIR.
