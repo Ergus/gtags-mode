@@ -257,7 +257,8 @@ completions usually from the cache when possible."
   (cond ;; TODO: use with-memoization in the future it will be on emacs 29.1
    ((not (gtags-mode--local-plist default-directory))
     (error "Calling `gtags-mode--list-completions' with no gtags-mode--plist"))
-   ((and (stringp prefix) (not (string-blank-p prefix))
+   ((and (stringp prefix)
+	 (not (string-match-p "\\`[ \t\n\r-]*\\'" prefix)) ;; not match empty or only -
 	 (gtags-mode--exec-sync "--ignore-case" "--completion" prefix)))
    ((plist-get gtags-mode--plist :cache))
    (t (plist-put gtags-mode--plist :cache (gtags-mode--exec-sync "--completion"))
