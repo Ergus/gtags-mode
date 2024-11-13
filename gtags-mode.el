@@ -5,7 +5,7 @@
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
-;; Version: 1.8.1
+;; Version: 1.8.2
 ;; Package-Requires: ((emacs "28"))
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -186,7 +186,7 @@ Returns the process object."
 (defun gtags-mode--exec-sync (&rest args)
   "Run global with ARGS on TARGET synchronously.
 On success return a list of strings or nil if any error occurred."
-  (if-let ((cmd gtags-mode--global)) ;; Required for with-temp-buffer
+  (if-let* ((cmd gtags-mode--global)) ;; Required for with-temp-buffer
       (with-temp-buffer
 	(let* ((status (apply #'process-file cmd nil (current-buffer) nil args))
 	       (output (string-trim
@@ -231,7 +231,7 @@ Includes the remote prefix concatenation when needed."
 
 (defun gtags-mode--create-plist (dir)
   "Return dbpath for DIR or nil if none."
-  (when-let ((root (gtags-mode--get-root dir)))
+  (when-let* ((root (gtags-mode--get-root dir)))
     (gtags-mode--message 2 "Gtags file in %s applies to default-directory: %s" root dir)
     (or (gtags-mode--get-plist root)   ;; already exist
 	(car (push `(:gtagsroot ,root :cache nil) gtags-mode--alist)))))
@@ -269,7 +269,7 @@ completions usually from the cache when possible."
 Returns the results as a list of CREATORS outputs similar to
 `mapcar'.  Creator should be a function with 4 input arguments:
 name, code, file, line."
-  (if-let ((root (plist-get (gtags-mode--local-plist default-directory) :gtagsroot)))
+  (if-let* ((root (plist-get (gtags-mode--local-plist default-directory) :gtagsroot)))
       (delete nil (mapcar
 		   (lambda (line)
 		     (when (string-match gtags-mode--output-format-regex line)
@@ -400,7 +400,7 @@ Return as a list of xref location objects."
 (defun gtags-mode-completion-function ()
   "Generate completion list."
   (if (gtags-mode--local-plist default-directory)
-      (when-let ((bounds (bounds-of-thing-at-point 'symbol)))
+      (when-let* ((bounds (bounds-of-thing-at-point 'symbol)))
 	(list (car bounds) (point)
 	      (completion-table-dynamic #'gtags-mode--list-completions)
 	      :exclusive 'no))))
