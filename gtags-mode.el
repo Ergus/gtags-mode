@@ -1,11 +1,11 @@
 ;;; gtags-mode.el --- GNU Global integration with xref, project and imenu. -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2022  Free Software Foundation, Inc.
+;; Copyright (C) 2022-2025  Free Software Foundation, Inc.
 
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
-;; Version: 1.8.2
+;; Version: 1.8.3
 ;; Package-Requires: ((emacs "28"))
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -63,7 +63,9 @@
   :local t)
 
 (defcustom gtags-mode-update-args ""
-  "Extra arguments to use when updating the database."
+  "Extra arguments to use when updating the database.
+For example to use universal-ctags you can set this to:
+\"--gtagsconf=/usr/share/gtags/gtags.conf --gtagslabel=universal-ctags\""
   :type 'string
   :local t)
 
