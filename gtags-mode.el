@@ -104,7 +104,7 @@ The address is absolute for remote hosts.")
   "Regex to filter the output with `gtags-mode--output-format-options'.")
 
 (defconst gtags-mode--output-format-options
-  '("--result=cscope" "--path-style=through" "--color=never")
+  '("--result=cscope" "--path-style=relative" "--color=never")
   "Command line options to use with `gtags-mode--output-format-regex'.")
 
 (defsubst gtags-mode--message (level format-string &rest args)
@@ -278,11 +278,11 @@ name, code, file, line."
 		       (funcall creator
 				(match-string-no-properties 2 line)   ;; name
 				(match-string-no-properties 4 line)   ;; code
-				(concat root (substring-no-properties
-					      line (1+ (match-beginning 1)) (match-end 1))) ;; file
+				(concat root (match-string-no-properties 1 line)) ;; file
 				(string-to-number (match-string-no-properties 3 line))))) ;; line
 		   (apply #'gtags-mode--exec-sync
-		    (append gtags-mode--output-format-options args `(,symbol)) )))
+			  (append '("--directory") `(,(file-local-name root))
+				  gtags-mode--output-format-options args `(,symbol)))))
     (error "Calling gtags-mode--filter-find-symbol without GTAGSROOT")
     nil))
 
