@@ -99,14 +99,6 @@ The address is absolute for remote hosts.")
 (defvar-local gtags-mode--plist nil
   "Project Global root for this buffer.")
 
-(defconst gtags-mode--output-format-regex
-  "^\\([^ ]+\\) \\([^ ]+\\) \\([[:digit:]]+\\) \\(.*\\)"
-  "Regex to filter the output with `gtags-mode--output-format-options'.")
-
-(defconst gtags-mode--output-format-options
-  '("--result=cscope" "--path-style=relative" "--color=never")
-  "Command line options to use with `gtags-mode--output-format-regex'.")
-
 (defsubst gtags-mode--message (level format-string &rest args)
   "Print log messages when the `gtags-mode-verbose' is greater than LEVEL.
 Message with lower verbose level are more important. Messages with level
@@ -274,14 +266,20 @@ name, code, file, line."
   (if-let* ((root (plist-get (gtags-mode--local-plist default-directory) :gtagsroot)))
       (delete nil (mapcar
 		   (lambda (line)
-		     (when (string-match gtags-mode--output-format-regex line)
+		     (when (string-match
+			    (concat
+			     "^\\(.+\\) "		       ; file, whitespace possible
+			     "\\(" (regexp-quote symbol) "\\)" ; name, no whitespace possible
+			     " \\([[:digit:]]+\\)"	       ; line, no whitespace possible
+			     " \\(.*\\)$")		       ; code, whitespace possible
+			    line)
 		       (funcall creator
 				(match-string-no-properties 2 line)   ;; name
 				(match-string-no-properties 4 line)   ;; code
 				(concat root (match-string-no-properties 1 line)) ;; file
 				(string-to-number (match-string-no-properties 3 line))))) ;; line
 		   (apply #'gtags-mode--exec-sync
-			  (append gtags-mode--output-format-options args
+			  (append '("--result=cscope" "--path-style=relative" "--color=never") args
 				  `("--directory" ,(file-local-name root) ,symbol)))))
     (error "Calling gtags-mode--filter-find-symbol without GTAGSROOT")
     nil))
