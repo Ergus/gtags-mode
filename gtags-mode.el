@@ -261,9 +261,16 @@ completions usually from the cache when possible."
     (error "Calling `gtags-mode--list-completions' with no gtags-mode--plist"))
    ((and (stringp prefix)
 	 (not (string-match-p "\\`[ \t\n\r-]*\\'" prefix)) ;; not match empty or only -
-	 (gtags-mode--exec-sync "--ignore-case" "--completion" prefix)))
+	 (gtags-mode--exec-sync "--directory"
+				(file-local-name
+				 (plist-get (gtags-mode--local-plist default-directory) :gtagsroot))
+				"--ignore-case" "--through" "--completion" prefix)))
    ((plist-get gtags-mode--plist :cache))
-   (t (plist-put gtags-mode--plist :cache (gtags-mode--exec-sync "--completion"))
+   (t (plist-put gtags-mode--plist :cache
+		 (gtags-mode--exec-sync "--directory"
+					(file-local-name
+					 (plist-get (gtags-mode--local-plist default-directory) :gtagsroot))
+					"--through" "--completion"))
       (plist-get gtags-mode--plist :cache))))
 
 (defun gtags-mode--filter-find-symbol (args symbol creator)
