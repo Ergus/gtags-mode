@@ -281,8 +281,8 @@ name, code, file, line."
 				(concat root (match-string-no-properties 1 line)) ;; file
 				(string-to-number (match-string-no-properties 3 line))))) ;; line
 		   (apply #'gtags-mode--exec-sync
-			  (append '("--directory") `(,(file-local-name root))
-				  gtags-mode--output-format-options args `(,symbol)))))
+			  (append gtags-mode--output-format-options args
+				  `("--directory" ,(file-local-name root) ,symbol)))))
     (error "Calling gtags-mode--filter-find-symbol without GTAGSROOT")
     nil))
 
