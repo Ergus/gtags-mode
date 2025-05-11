@@ -5,7 +5,7 @@
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
-;; Version: 1.8.4
+;; Version: 1.8.5
 ;; Package-Requires: ((emacs "28"))
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -100,7 +100,7 @@ The address is absolute for remote hosts.")
   "Project Global root for this buffer.")
 
 (defconst gtags-mode--output-format-regex
-  "^\\([^ ]+\\) \\([^ ]+\\) \\([[:digit:]]+\\) \\(.*\\)"
+  "^\\(.+\\) \\([^ ]+\\) \\([[:digit:]]+\\) \\(.*\\)"
   "Regex to filter the output with `gtags-mode--output-format-options'.")
 
 (defconst gtags-mode--output-format-options
