@@ -5,7 +5,7 @@
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
-;; Version: 1.8.6
+;; Version: 1.8.7
 ;; Package-Requires: ((emacs "28"))
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -379,19 +379,22 @@ Return as a list of xref location objects."
 
 (cl-defmethod project-files ((project (head :gtagsroot)) &optional dirs)
   "List files inside all the PROJECT or in DIRS if specified."
-  (let* ((root (project-root project))
-	 (default-directory root)
-	 (results
-	  (mapcan
-	   (lambda (dir)
-	     (when (string-prefix-p root dir)
-	       (mapcar (lambda (file)
-			 (expand-file-name file root))
-		       (gtags-mode--exec-sync
-			"--path-style=through" "--path"
-			(string-remove-prefix root dir)))))
-	   (or dirs `(,root)))))
-    (if (> (length dirs) 1) (delete-dups results) results)))
+  (let* ((default-directory (project-root project))
+	 (dirs (or (delete-dups dirs) `(,default-directory)))
+	 (results (if project-files-relative-names
+		      (gtags-mode--exec-sync
+		       "--path-style=relative" "--path"
+		       (string-remove-prefix default-directory (car dirs)))
+		    (mapcan
+		     (lambda (dir)
+		       (when (string-prefix-p default-directory dir)
+			 (mapcar (lambda (file)
+				   (expand-file-name file default-directory))
+				 (gtags-mode--exec-sync
+				  "--path-style=through" "--path"
+				  (string-remove-prefix default-directory dir)))))
+		     dirs))))
+    (if (length> dirs 1) (delete-dups results) results)))
 
 (cl-defmethod project-buffers ((project (head :gtagsroot)))
   "Return the list of all live buffers that belong to PROJECT."
