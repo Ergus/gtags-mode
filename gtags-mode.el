@@ -100,7 +100,7 @@ The address is absolute for remote hosts.")
   "Project Global root for this buffer.")
 
 (defconst gtags-mode--output-format-regex
-  "^\\(.+\\) \\([^ ]+\\) \\([[:digit:]]+\\) \\(.*\\)"
+  "^\\(.+?\\) \\([^ ]+\\) \\([[:digit:]]+\\) \\(.*\\)"
   "Regex to filter the output with `gtags-mode--output-format-options'.")
 
 (defconst gtags-mode--output-format-options
