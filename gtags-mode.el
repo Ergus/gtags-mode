@@ -5,7 +5,7 @@
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
-;; Version: 1.8.7
+;; Version: 1.8.8
 ;; Package-Requires: ((emacs "28"))
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -264,7 +264,9 @@ completions usually from the cache when possible."
 	 (gtags-mode--exec-sync "--directory"
 				(file-local-name
 				 (plist-get (gtags-mode--local-plist default-directory) :gtagsroot))
-				"--ignore-case" "--through" "--completion" prefix)))
+				(if completion-ignore-case "--ignore-case" "--match-case")
+				"--through" "--completion"
+				(substring-no-properties prefix))))
    ((plist-get gtags-mode--plist :cache))
    (t (plist-put gtags-mode--plist :cache
 		 (gtags-mode--exec-sync "--directory"
