@@ -89,6 +89,10 @@ This variable must be set before enabling gtags-mode"
   :type 'natnum
   :risky t)
 
+(defcustom gtags-mode-use-annotation t
+  "Whether to use annotation on completions."
+  :type 'boolean)
+
 (defvar gtags-mode--alist nil
   "Full list of Global roots.
 The address is absolute for remote hosts.")
@@ -411,13 +415,29 @@ Return as a list of xref location objects."
 		(buffer-list))))
 
 ;; Completion-at-point-function (capf) ===============================
+(defun gtags-mode-annotation-function (string)
+  "Generate completion annotation.
+The annotation is defined as the substring of STRING beginning with the
+first opening parenthesis, and until either the first closing
+parenthesis, or the end of STRING, whatever comes first."
+  (when gtags-mode-use-annotation
+    (and-let*
+	((whole (car (gtags-mode--filter-find-symbol
+		      '("--definition") string
+		      (lambda (_name code _file _line)
+			code))))
+	 (index (or (string-match "\\(([^)]*)\\)" whole) ; try first with closing parenthesis
+		    (string-match "\\((.*\\)$" whole)))  ; then take until end of string
+	 (output (concat " " (match-string-no-properties 1 whole)))))))
+
 (defun gtags-mode-completion-function ()
   "Generate completion list."
   (if (gtags-mode--local-plist default-directory)
       (when-let* ((bounds (bounds-of-thing-at-point 'symbol)))
 	(list (car bounds) (point)
 	      (completion-table-dynamic #'gtags-mode--list-completions)
-	      :exclusive 'no))))
+	      :exclusive 'no
+	      :annotation-function #'gtags-mode-annotation-function))))
 
 (defmacro gtags-mode--with-feature (feature &rest body)
   (declare (indent 1) (debug t))
