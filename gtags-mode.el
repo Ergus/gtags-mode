@@ -5,7 +5,7 @@
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
-;; Version: 1.8.9
+;; Version: 1.9.0
 ;; Package-Requires: ((emacs "28"))
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -163,8 +163,11 @@ This is the sentinel set in `gtags-mode--exec-async'."
       (gtags-mode--message 1 "Global async error output:\n%s"
 			   (string-trim
 			    (buffer-substring-no-properties (point-min) (point-max))))))
-  (gtags-mode--message 2 "Async %s: %s"
-		       (process-get process :command) (string-trim event))) ;; Always notify
+  (gtags-mode--message 2 "Async %s: result: %s elapsed: %s"
+		       (process-get process :command)
+		       (string-trim event)
+		       (time-subtract (current-time)
+				      (process-get process :start-time)))) ;; Always notify
 
 (defun gtags-mode--exec-async (cmd &rest args)
   "Run CMD with ARGS on TARGET asynchronously.
@@ -173,6 +176,7 @@ Start an asynchronous process and sets
 Returns the process object."
   (if-let* ((cmd (buffer-local-value cmd (current-buffer)))
 	    (command (append `(,cmd) (string-split gtags-mode-update-args) args))
+	    (start-time (current-time))
 	    (pr (make-process :name (format "%s-async" cmd)
 			      :buffer (generate-new-buffer " *temp*" t)
 			      :command command
@@ -180,7 +184,9 @@ Returns the process object."
 			      :file-handler t)))
       (progn
 	;; In future not needed with `remote-commands'.
-	(set-process-plist pr `(:parent-buffer ,(current-buffer) :command ,command))
+	(set-process-plist pr (list :parent-buffer (current-buffer)
+				    :command command
+				    :start-time start-time))
 	pr)
     (gtags-mode--message 1 "Can't start async %s subprocess" cmd)
     nil))
@@ -190,18 +196,19 @@ Returns the process object."
 On success return a list of strings or nil if any error occurred."
   (if-let* ((cmd gtags-mode--global)) ;; Required for with-temp-buffer
       (with-temp-buffer
-	(let* ((status (apply #'process-file cmd nil (current-buffer) nil args))
+	(let* ((start-time (current-time))
+	       (status (apply #'process-file cmd nil (current-buffer) nil args))
 	       (output (string-trim
 			(buffer-substring-no-properties (point-min) (point-max)))))
 	  (if (eq status 0)
 	      (string-lines output t)
 	    (gtags-mode--message 1 "Global sync error output:\n%s" output)
-	    (gtags-mode--message 1 "Sync %s %s: exited abnormally with code %s" cmd args status)
+	    (gtags-mode--message 1 "Sync %s %s: exited abnormally with code: %s elapsed: %s"
+				 cmd args status
+				 (time-subtract (current-time) start-time))
 	    nil)))
     (gtags-mode--message 1 "Can't start sync %s subprocess" cmd)
     nil))
-
-
 
 (defsubst gtags-mode--get-root (dir)
   "Get the top dbpath given DIR.
