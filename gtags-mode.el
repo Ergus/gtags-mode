@@ -5,7 +5,7 @@
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
-;; Version: 1.8.8
+;; Version: 1.8.9
 ;; Package-Requires: ((emacs "28"))
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -331,9 +331,10 @@ won't have `buffer-file-name' but will just acquire one."
   (when (and buffer-file-name
 	     (or gtags-mode--plist
 		 (gtags-mode--set-local-plist default-directory)))
-    (gtags-mode--exec-async
-     'gtags-mode--global
-     "--single-update" (file-name-nondirectory buffer-file-name))))
+    (let* ((default-directory (plist-get gtags-mode--plist :gtagsroot))
+	   (filename (file-relative-name buffer-file-name)))
+      (gtags-mode--exec-async
+       'gtags-mode--global "--single-update" filename))))
 
 ;; xref integration ==================================================
 (defun gtags-mode--xref-find-symbol (args symbol)
