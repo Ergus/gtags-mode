@@ -209,7 +209,12 @@ On success return a list of strings or nil if any error occurred."
 	       (output (string-trim
 			(buffer-substring-no-properties (point-min) (point-max)))))
 	  (if (eq status 0)
-	      (string-lines output t)
+	      (let ((res (string-lines output t)))
+		(gtags-mode--message 2 "Global sync %s elapsed: %s lines: %s"
+				     args
+				     (float-time (time-subtract (current-time) start-time))
+				     (length res))
+		res)
 	    (gtags-mode--message 1 "Global sync error output:\n%s" output)
 	    (gtags-mode--message 1 "Sync %s %s: exited abnormally with code: %s elapsed: %.06f"
 				 cmd args status
