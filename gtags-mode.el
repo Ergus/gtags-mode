@@ -276,6 +276,8 @@ Includes the remote prefix concatenation when needed."
       gtags-mode--plist
     (gtags-mode--set-local-plist (or dir default-directory))))
 
+(defvar-local gtags-mode--list-cache-plist nil)
+
 (defun gtags-mode--list-completions (prefix)
   "Get the list of completions for PREFIX.
 When PREFIX is nil or empty; return the entire list of
@@ -284,13 +286,20 @@ completions usually from the cache when possible."
    ((not (gtags-mode--local-plist default-directory))
     (error "Calling `gtags-mode--list-completions' with no gtags-mode--plist"))
    ((and (stringp prefix)
-	 (not (string-match-p "\\`[ \t\n\r-]*\\'" prefix)) ;; not match empty or only -
-	 (gtags-mode--exec-sync "--directory"
-				(file-local-name
-				 (plist-get (gtags-mode--local-plist default-directory) :gtagsroot))
-				(if completion-ignore-case "--ignore-case" "--match-case")
-				"--through" "--completion"
-				(substring-no-properties prefix))))
+	 (not (string-blank-p prefix))) ;; not match empty or only -
+    (if-let ((key (intern prefix))
+	     (value (plist-get gtags-mode--list-cache-plist key)))
+	value
+      (setq value (gtags-mode--exec-sync
+		   "--directory"
+		   (file-local-name
+		    (plist-get (gtags-mode--local-plist default-directory) :gtagsroot))
+		   (if completion-ignore-case "--ignore-case" "--match-case")
+		   "--through" "--completion"
+		   (substring-no-properties prefix)))
+      (setq gtags-mode--list-cache-plist
+	    (plist-put gtags-mode--list-cache-plist key value))
+      value))
    ((plist-get gtags-mode--plist :cache))
    (t (setq gtags-mode--plist
 	    (plist-put gtags-mode--plist
