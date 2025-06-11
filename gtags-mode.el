@@ -251,7 +251,11 @@ Includes the remote prefix concatenation when needed."
     (gtags-mode--set-connection-locals)
     (setq-local gtags-mode--plist
 		(or (gtags-mode--get-plist default-directory)
-		    (gtags-mode--create-plist default-directory)))))
+		    (gtags-mode--create-plist default-directory)))
+    (when buffer-file-name
+      (setq-local gtags-mode--plist
+		  (plist-put gtags-mode--plist
+			     :true-file-name (file-truename buffer-file-name))))))
 
 (defun gtags-mode--local-plist (&optional dir)
   "Set and return the buffer local value of `gtags-mode--plist'."
@@ -341,10 +345,10 @@ won't have `buffer-file-name' but will just acquire one."
   (when (and buffer-file-name
 	     (or gtags-mode--plist
 		 (gtags-mode--set-local-plist default-directory)))
-    (let* ((default-directory (plist-get gtags-mode--plist :gtagsroot))
-	   (filename (file-relative-name buffer-file-name)))
+    (when-let* ((default-directory (plist-get gtags-mode--plist :gtagsroot))
+		(true-file-name (plist-get gtags-mode--plist :true-file-name)))
       (gtags-mode--exec-async
-       'gtags-mode--global "--single-update" filename))))
+       'gtags-mode--global "--single-update" (file-relative-name true-file-name)))))
 
 ;; xref integration ==================================================
 (defun gtags-mode--xref-find-symbol (args symbol)
