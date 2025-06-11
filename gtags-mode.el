@@ -5,7 +5,7 @@
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
-;; Version: 1.9.0
+;; Version: 1.9.1
 ;; Package-Requires: ((emacs "28"))
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -163,11 +163,11 @@ This is the sentinel set in `gtags-mode--exec-async'."
       (gtags-mode--message 1 "Global async error output:\n%s"
 			   (string-trim
 			    (buffer-substring-no-properties (point-min) (point-max))))))
-  (gtags-mode--message 2 "Async %s: result: %s elapsed: %s"
+  (gtags-mode--message 2 "Async %s: result: %s elapsed: %.06f"
 		       (process-get process :command)
 		       (string-trim event)
-		       (time-subtract (current-time)
-				      (process-get process :start-time)))) ;; Always notify
+		       (float-time (time-subtract (current-time)
+						  (process-get process :start-time))))) ;; Always notify
 
 (defun gtags-mode--exec-async (cmd &rest args)
   "Run CMD with ARGS on TARGET asynchronously.
@@ -203,9 +203,9 @@ On success return a list of strings or nil if any error occurred."
 	  (if (eq status 0)
 	      (string-lines output t)
 	    (gtags-mode--message 1 "Global sync error output:\n%s" output)
-	    (gtags-mode--message 1 "Sync %s %s: exited abnormally with code: %s elapsed: %s"
+	    (gtags-mode--message 1 "Sync %s %s: exited abnormally with code: %s elapsed: %.06f"
 				 cmd args status
-				 (time-subtract (current-time) start-time))
+				 (float-time (time-subtract (current-time) start-time)))
 	    nil)))
     (gtags-mode--message 1 "Can't start sync %s subprocess" cmd)
     nil))
