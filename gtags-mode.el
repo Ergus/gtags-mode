@@ -157,7 +157,7 @@ This is the sentinel set in `gtags-mode--exec-async'."
 	    (when (functionp extra-sentinel)           ;; run extra sentinel
 	      (funcall extra-sentinel))
 	    (when gtags-mode--plist                    ;; clear cache
-	      (plist-put gtags-mode--plist :cache nil)))))
+	      (setq gtags-mode--plist (plist-put gtags-mode--plist :cache nil))))))
     (with-current-buffer (process-buffer process)      ;; In failure print error
       (while (accept-process-output process))
       (gtags-mode--message 1 "Global async error output:\n%s"
@@ -275,11 +275,13 @@ completions usually from the cache when possible."
 				"--through" "--completion"
 				(substring-no-properties prefix))))
    ((plist-get gtags-mode--plist :cache))
-   (t (plist-put gtags-mode--plist :cache
-		 (gtags-mode--exec-sync "--directory"
-					(file-local-name
-					 (plist-get (gtags-mode--local-plist default-directory) :gtagsroot))
-					"--through" "--completion"))
+   (t (setq gtags-mode--plist
+	    (plist-put gtags-mode--plist
+		       :cache (gtags-mode--exec-sync
+			       "--directory"
+			       (file-local-name
+				(plist-get (gtags-mode--local-plist default-directory) :gtagsroot))
+			       "--through" "--completion")))
       (plist-get gtags-mode--plist :cache))))
 
 (defun gtags-mode--filter-find-symbol (args symbol creator)
