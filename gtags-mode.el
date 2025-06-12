@@ -372,9 +372,11 @@ won't have `buffer-file-name' but will just acquire one."
 	     (or gtags-mode--plist
 		 (gtags-mode--set-local-plist default-directory)))
     (when-let* ((default-directory (plist-get gtags-mode--plist :gtagsroot))
-		(true-file-name (plist-get gtags-mode--plist :true-file-name)))
-      (gtags-mode--exec-async
-       'gtags-mode--global "--single-update" (file-relative-name true-file-name)))))
+		(true-file-name (plist-get gtags-mode--plist :true-file-name))
+		(pr (gtags-mode--exec-async
+		     'gtags-mode--global "--single-update" (file-relative-name true-file-name))))
+      (process-put pr :extra-sentinel (lambda ()
+					(setq-local gtags-mode--list-cache-plist nil))))))
 
 ;; xref integration ==================================================
 (defun gtags-mode--xref-find-symbol (args symbol)
