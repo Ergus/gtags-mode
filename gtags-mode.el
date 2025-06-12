@@ -338,9 +338,10 @@ This iterates over the buffers and tries to reset
 (defun gtags-mode-update ()
   "Update GLOBAL project database."
   (interactive)
-  (when (gtags-mode--local-plist default-directory)
-    (let ((default-directory (plist-get gtags-mode--plist :gtagsroot)))
-      (gtags-mode--exec-async 'gtags-mode--global "--update"))))
+  (when-let*  (((gtags-mode--local-plist default-directory))
+	       (default-directory (plist-get gtags-mode--plist :gtagsroot))
+	       (pr (gtags-mode--exec-async 'gtags-mode--global "--update")))
+    (process-put pr :extra-sentinel #'gtags-mode--update-buffers-plist)))
 
 ;; Hooks =============================================================
 (defun gtags-mode--after-save-hook ()
