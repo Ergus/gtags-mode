@@ -140,6 +140,8 @@ warnings or errors."
 	 (connection-local-set-profiles criteria symvars))))
     (hack-connection-local-variables-apply criteria)))
 
+(defvar gtags-mode--pr-async nil)
+
 ;; Async functions
 (defun gtags-mode--exec-async-sentinel (process event)
   "Sentinel to run when PROCESS emits EVENT.
@@ -163,6 +165,7 @@ This is the sentinel set in `gtags-mode--exec-async'."
       (gtags-mode--message 1 "Global async error output:\n%s"
 			   (string-trim
 			    (buffer-substring-no-properties (point-min) (point-max))))))
+  (setq gtags-mode--pr-async nil)
   (gtags-mode--message 2 "Async %s: result: %s elapsed: %.06f"
 		       (process-get process :command)
 		       (string-trim event)
@@ -177,6 +180,9 @@ Returns the process object."
   (if-let* ((cmd (buffer-local-value cmd (current-buffer)))
 	    (command (append `(,cmd) (string-split gtags-mode-update-args) args))
 	    (start-time (current-time))
+	    (and (not gtags-mode--pr-async)
+		 (gtags-mode--message 1 "Cannot run command: There is a gtags or global process already running.")
+		 t)
 	    (pr (make-process :name (format "%s-async" cmd)
 			      :buffer (generate-new-buffer " *temp*" t)
 			      :command command
@@ -187,7 +193,7 @@ Returns the process object."
 	(set-process-plist pr (list :parent-buffer (current-buffer)
 				    :command command
 				    :start-time start-time))
-	pr)
+	(setq gtags-mode--pr-async pr))
     (gtags-mode--message 1 "Can't start async %s subprocess" cmd)
     nil))
 
