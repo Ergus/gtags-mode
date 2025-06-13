@@ -180,9 +180,9 @@ Returns the process object."
   (if-let* ((cmd (buffer-local-value cmd (current-buffer)))
 	    (command (append `(,cmd) (string-split gtags-mode-update-args) args))
 	    (start-time (current-time))
-	    (and (not gtags-mode--pr-async)
-		 (gtags-mode--message 1 "Cannot run command: There is a gtags or global process already running.")
-		 t)
+	    ((and (not gtags-mode--pr-async)
+		  (gtags-mode--message 1 "Cannot run command: There is a gtags or global process already running.")
+		  t))
 	    (pr (make-process :name (format "%s-async" cmd)
 			      :buffer (generate-new-buffer " *temp*" t)
 			      :command command
