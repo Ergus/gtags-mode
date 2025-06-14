@@ -180,15 +180,17 @@ Returns the process object."
   (if-let* ((cmd (buffer-local-value cmd (current-buffer)))
 	    (command (append `(,cmd) (string-split gtags-mode-update-args) args))
 	    (start-time (current-time))
-	    ((and (not gtags-mode--pr-async)
-		  (gtags-mode--message 1 "Cannot run command: There is a gtags or global process already running.")
-		  t))
+	    ((if (not gtags-mode--pr-async)
+		t
+	      (gtags-mode--message 1 "Cannot run command: There is a gtags or global process already running.")
+	      nil))
 	    (pr (make-process :name (format "%s-async" cmd)
 			      :buffer (generate-new-buffer " *temp*" t)
 			      :command command
 			      :sentinel #'gtags-mode--exec-async-sentinel
 			      :file-handler t)))
       (progn
+	(gtags-mode--message 2 "Starting async process: %s" command)
 	;; In future not needed with `remote-commands'.
 	(set-process-plist pr (list :parent-buffer (current-buffer)
 				    :command command
@@ -319,11 +321,14 @@ name, code, file, line."
 This iterates over the buffers and tries to reset
 `gtags-mode--plist' when it is nil."
   (dolist (buff (buffer-list))
-    (unless (buffer-local-value 'gtags-mode--plist buff)
-      (with-current-buffer buff
-	(gtags-mode--set-connection-locals)
-	(kill-local-variable 'gtags-mode--plist) ;; kill the local to reset it
-	(gtags-mode--local-plist default-directory)))))
+    (gtags-mode--message 2 "Updating all buffers")
+    (with-current-buffer buff
+      (when buffer-file-name
+	(if (buffer-local-value 'gtags-mode--plist buff)
+	    (setq-local gtags-mode--list-cache-plist nil) ;; cleanup the cache 
+	  (gtags-mode--set-connection-locals)
+	  (kill-local-variable 'gtags-mode--plist) ;; kill the local to reset it
+	  (gtags-mode--local-plist default-directory))))))
 
 ;; Interactive commands ==============================================
 
