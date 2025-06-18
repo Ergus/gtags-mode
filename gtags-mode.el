@@ -5,7 +5,7 @@
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
-;; Version: 1.9.2
+;; Version: 1.9.3
 ;; Package-Requires: ((emacs "28"))
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -260,7 +260,7 @@ Includes the remote prefix concatenation when needed."
     (setq-local gtags-mode--plist
 		(or (gtags-mode--get-plist default-directory)
 		    (gtags-mode--create-plist default-directory)))
-    (when buffer-file-name
+    (when (and gtags-mode--plist buffer-file-name)
       (setq-local gtags-mode--plist
 		  (plist-put gtags-mode--plist
 			     :true-file-name (file-truename buffer-file-name))))))
