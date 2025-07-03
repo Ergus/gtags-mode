@@ -287,8 +287,8 @@ completions usually from the cache when possible."
     (error "Calling `gtags-mode--list-completions' with no gtags-mode--plist"))
    ((and (stringp prefix)
 	 (not (string-blank-p prefix))) ;; not match empty or only -
-    (if-let ((key (intern prefix))
-	     (value (plist-get gtags-mode--list-cache-plist key)))
+    (if-let* ((key (intern prefix))
+	      (value (plist-get gtags-mode--list-cache-plist key)))
 	value
       (setq value (gtags-mode--exec-sync
 		   "--directory"
