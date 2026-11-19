@@ -9,7 +9,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      checks: write
     strategy:
       fail-fast: false
       matrix:
@@ -29,30 +28,9 @@ jobs:
           emacs -Q --batch --eval "(progn (require 'package)
           (add-to-list 'package-archives '(\"melpa\" . \"https://melpa.org/packages/\"))
           (package-initialize) (package-refresh-contents) (package-install 'undercover))"
+      # Writes the tests and coverage tables to the job summary.
       - name: Run tests
-        env:
-          # ERT writes gtags-mode-tests.xml next to the test file.
-          EMACS_TEST_JUNIT_REPORT: 1
-        run: >-
-          emacs -Q --batch -f package-activate-all -L . -l gtags-mode-tests.el
-          -f ert-run-tests-batch-and-exit
-      - name: Report tests
-        if: always()
-        uses: mikepenz/action-junit-report@v6
-        with:
-          report_paths: gtags-mode-tests.xml
-          check_name: tests (Emacs ${{ matrix.emacs }})
-          include_passed: true
-          detailed_summary: true
-      - name: Report coverage
-        if: always() && hashFiles('coverage.info') != ''
-        run: |
-          awk -F'[:,]' '
-            BEGIN { print "## Coverage\n\n| File | Lines | Coverage | Missed lines |\n|---|---|---|---|" }
-            /^SF:/ { file = substr($0, 4); sub(".*/", "", file); n = c = 0; missed = "" }
-            /^DA:/ { n++; if ($3 > 0) c++; else missed = missed (missed ? ", " : "") $2 }
-            /^end_of_record/ { printf "| %s | %d/%d | %.1f%% | %s |\n", file, c, n, 100 * c / n, missed }
-          ' coverage.info >> "$GITHUB_STEP_SUMMARY"
+        run: emacs -Q --batch -f package-activate-all -L . -l .github/report.el
       # undercover writes absolute paths; Coveralls maps paths relative
       # to the repository root onto the sources.
       - name: Make coverage paths relative

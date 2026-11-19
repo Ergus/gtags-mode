@@ -122,7 +122,9 @@ emacs -Q --batch -L . -l gtags-mode-tests.el \
 ```
 
 GitHub Actions runs the tests with Emacs 30.1 and the development
-snapshot on every push to `master`.  The Emacs 30.1 run measures
+snapshot on every push to `master`, through `.github/report.el`: it
+writes a table of the tests to the job summary and annotates
+failures.  The Emacs 30.1 run measures
 coverage with [undercover](https://github.com/undercover-el/undercover.el),
 shows it in the job summary and uploads it to
 [Coveralls](https://coveralls.io/github/Ergus/gtags-mode).
