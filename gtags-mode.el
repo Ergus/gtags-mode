@@ -45,10 +45,10 @@
 ;;; Code:
 
 (require 'xref)
+(require 'project)
+(require 'seq)
 (require 'files-x)
 (eval-when-compile (require 'subr-x))
-
-(defvar project-files-relative-names)  ;; project.el, Emacs 30
 
 (defgroup gtags-mode nil
   "GNU Global group for xref."
@@ -66,7 +66,8 @@
 
 (defcustom gtags-mode-update-args ""
   "Extra arguments to use when updating the database.
-For example to use universal-ctags you can set this to:
+The string is split with shell syntax, so arguments containing spaces
+must be quoted.  For example to use universal-ctags you can set this to:
 \"--gtagsconf=/usr/share/gtags/gtags.conf --gtagslabel=universal-ctags\""
   :type 'string
   :local t)
@@ -197,7 +198,7 @@ Start an asynchronous process and sets
 `gtags-mode--exec-async-sentinel' as the process sentinel.
 Returns the process object."
   (if-let* ((cmd (buffer-local-value cmd (current-buffer)))
-	    (command (append `(,cmd) (string-split gtags-mode-update-args) args))
+	    (command (append `(,cmd) (split-string-shell-command gtags-mode-update-args) args))
 	    (start-time (current-time))
 	    ((if (not gtags-mode--pr-async)
 		t
