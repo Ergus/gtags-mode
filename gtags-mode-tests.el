@@ -67,6 +67,15 @@
   "Return the sorted line numbers of XREFS."
   (sort (mapcar (lambda (x) (xref-location-line (xref-item-location x))) xrefs)))
 
+(defun gtags-mode-tests--sync-calls (fn)
+  "Call FN; return the argument lists of its `gtags-mode--exec-sync' calls."
+  (let* ((calls nil)
+	 (spy (lambda (&rest args) (push args calls))))
+    (advice-add 'gtags-mode--exec-sync :before spy)
+    (unwind-protect (funcall fn)
+      (advice-remove 'gtags-mode--exec-sync spy))
+    (nreverse calls)))
+
 (defmacro gtags-mode-tests--with-project (&rest body)
   "Run BODY with a fresh project; bind `root', `other' and `dir'.
 `dir' is the local temporary directory.  `root' is the indexed
@@ -262,6 +271,137 @@ For a remote root, the local buffer must not resolve the executable."
       (gtags-mode-tests--wait)
       (should-not gtags-mode--pr-async)
       (should (= count (length (buffer-list)))))))
+
+;; Regressions from the history ====================================
+
+(gtags-mode-tests-deftest gtags-mode-tests-spaces-in-path
+  "Paths with spaces and code with \" NAME NUMBER \" parse (333b0ac, b68128a)."
+  (gtags-mode-tests--write (concat dir "proj/src/my dir/e f.c")
+			   "int eps(int a) { return a + 1 ; }\n")
+  (gtags-mode-tests--gtags (concat dir "proj/"))
+  (with-current-buffer (find-file-noselect (concat root "src/a.c"))
+    (let ((loc (xref-item-location
+		(car (xref-backend-definitions (xref-find-backend) "eps")))))
+      (should (equal (xref-location-group loc) (concat root "src/my dir/e f.c")))
+      (should (= (xref-location-line loc) 1)))))
+
+(ert-deftest gtags-mode-tests-gtagslibpath ()
+  "Definitions and completions include GTAGSLIBPATH (87245a0, 86a846e)."
+  (gtags-mode-tests--with-project
+    (gtags-mode-tests--gtags (concat dir "other/"))
+    (let ((process-environment (cons (concat "GTAGSLIBPATH=" dir "other")
+				     process-environment)))
+      (with-current-buffer (find-file-noselect (concat root "src/a.c"))
+	(let ((loc (xref-item-location
+		    (car (xref-backend-definitions (xref-find-backend) "delta")))))
+	  (should (equal (expand-file-name (xref-location-group loc))
+			 (concat other "d.c"))))
+	(should (equal (gtags-mode--list-completions "del") '("delta")))))))
+
+(gtags-mode-tests-deftest gtags-mode-tests-undefined-references
+  "References include symbols without definition (5c09390)."
+  (gtags-mode-tests--write (concat dir "proj/src/u.c")
+			   "int use(void) { return undefined_fn(); }\n")
+  (gtags-mode-tests--gtags (concat dir "proj/"))
+  (with-current-buffer (find-file-noselect (concat root "src/a.c"))
+    (should (equal (gtags-mode-tests--lines
+		    (xref-backend-references (xref-find-backend) "undefined_fn"))
+		   '(1)))))
+
+(ert-deftest gtags-mode-tests-dash-prefix ()
+  "Prefixes made of dashes are not options (816093f)."
+  (gtags-mode-tests--with-project
+    (with-current-buffer (find-file-noselect (concat root "src/a.c"))
+      (should-not (gtags-mode--list-completions "-"))
+      (should-not (gtags-mode--list-completions "----")))))
+
+(gtags-mode-tests-deftest gtags-mode-tests-save-outside-project
+  "Saving outside a project queries global once and starts nothing (d5c597d, 17c7c7c)."
+  (with-current-buffer (find-file-noselect (concat other "d.c"))
+    (let ((calls (gtags-mode-tests--sync-calls
+		  (lambda ()
+		    (dotimes (_ 2)
+		      (insert " ")
+		      (let ((inhibit-message t)) (save-buffer))
+		      (should-not gtags-mode--pr-async))))))
+      (should (equal calls '(("--print-dbpath")))))))
+
+(gtags-mode-tests-deftest gtags-mode-tests-non-file-buffer
+  "Non-file buffers do not query global, but reuse known projects (a4346a0, 38c4812)."
+  (with-temp-buffer
+    (setq default-directory root)
+    (should-not (gtags-mode-tests--sync-calls
+		 (lambda () (should-not (gtags-mode--local-plist))))))
+  (with-current-buffer (find-file-noselect (concat root "src/a.c"))
+    (gtags-mode--local-plist))
+  (with-temp-buffer
+    (setq default-directory (concat root "src/"))
+    (should-not (gtags-mode-tests--sync-calls
+		 (lambda () (should (equal (project-root (gtags-mode--local-plist)) root)))))))
+
+(gtags-mode-tests-deftest gtags-mode-tests-symlink
+  "Files visited through a symlinked directory use the true name (8c6dafd)."
+  (make-symbolic-link (concat dir "proj/src") (concat dir "link"))
+  (with-current-buffer (find-file-noselect (concat prefix dir "link/a.c"))
+    (should (equal (project-root (gtags-mode--local-plist)) root))
+    (should (equal gtags-mode--true-file-name (concat root "src/a.c")))
+    (should (equal (mapcar #'car (funcall imenu-create-index-function))
+		   '("alpha_one" "alpha_two")))))
+
+(ert-deftest gtags-mode-tests-imenu-fallback ()
+  "Outside a project the major mode builds the index (076ae4a)."
+  (gtags-mode-tests--with-project
+    (with-current-buffer (find-file-noselect (concat other "d.c"))
+      (should (assoc "delta" (funcall imenu-create-index-function))))))
+
+(ert-deftest gtags-mode-tests-single-process ()
+  "Only one async process runs at a time (c4ed450)."
+  (gtags-mode-tests--with-project
+    (let ((default-directory root))
+      (should (gtags-mode--exec-async 'gtags-mode--global "--update"))
+      (should-not (gtags-mode--exec-async 'gtags-mode--global "--update"))
+      (gtags-mode-tests--wait)
+      (should (gtags-mode--exec-async 'gtags-mode--global "--update"))
+      (gtags-mode-tests--wait))))
+
+(gtags-mode-tests-deftest gtags-mode-tests-update
+  "`gtags-mode-update' registers buffers whose database appeared later (41e9847)."
+  (let ((buffer (find-file-noselect (concat other "d.c"))))
+    (with-current-buffer buffer
+      (should-not (gtags-mode--local-plist)))
+    (gtags-mode-tests--gtags (concat dir "other/"))
+    (with-current-buffer (find-file-noselect (concat root "src/a.c"))
+      (gtags-mode-update)
+      (gtags-mode-tests--wait))
+    (with-current-buffer buffer
+      (should (equal (project-root gtags-mode--plist) other)))))
+
+(gtags-mode-tests-deftest gtags-mode-tests-project-buffers
+  "`project-buffers' lists only the project's buffers (3c68518)."
+  (let ((a (find-file-noselect (concat root "src/a.c")))
+	(b (find-file-noselect (concat root "src/sub/b.c"))))
+    (find-file-noselect (concat other "d.c"))
+    (should (equal (sort (project-buffers (gtags-mode--project-find root))
+			 :key #'buffer-name)
+		   (sort (list a b) :key #'buffer-name)))))
+
+(ert-deftest gtags-mode-tests-features ()
+  "`gtags-mode-features' selects the hooks; disabling removes them all."
+  (gtags-mode-tests--with-project
+    (let ((hooks '(project-find-functions xref-backend-functions
+		   completion-at-point-functions after-save-hook
+		   after-change-major-mode-hook)))
+      (let ((gtags-mode-features '(project)))
+	(gtags-mode -1)
+	(gtags-mode 1)
+	(should (memq #'gtags-mode--project-find project-find-functions))
+	(should-not (memq #'gtags-mode--local-plist xref-backend-functions))
+	(should-not (memq #'gtags-mode--imenu-setup after-change-major-mode-hook)))
+      (gtags-mode -1)
+      (dolist (hook hooks)
+	(should-not (seq-some (lambda (f) (and (symbolp f)
+					       (string-prefix-p "gtags-mode-" (symbol-name f))))
+			      (default-value hook)))))))
 
 ;; mode line =========================================================
 
