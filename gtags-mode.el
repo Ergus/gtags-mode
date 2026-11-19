@@ -412,9 +412,12 @@ Return as a list of xref location objects."
 
 (defun gtags-mode--imenu-advice ()
   "Make imenu use Global."
-  (when (and buffer-file-name (gtags-mode--local-plist default-directory))
+  (when-let* (((and buffer-file-name (gtags-mode--local-plist default-directory)))
+	      (true-file-name gtags-mode--true-file-name))
+    ;; global resolves --file against --directory, i.e. the root.
     (gtags-mode--filter-find-symbol
-     '("--file") (file-name-nondirectory buffer-file-name)
+     '("--file") (file-relative-name true-file-name
+				     (plist-get gtags-mode--plist :gtagsroot))
      (lambda (name _code _file line)
        (list name line #'gtags-mode--imenu-goto-function)))))
 
