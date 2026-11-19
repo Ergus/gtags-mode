@@ -5,7 +5,7 @@
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
-;; Version: 1.9.6
+;; Version: 2.0.0
 ;; Package-Requires: ((emacs "30"))
 
 ;; This program is free software: you can redistribute it and/or modify
