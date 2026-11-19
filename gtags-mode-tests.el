@@ -340,10 +340,15 @@ For a remote root, the local buffer must not resolve the executable."
 		 (lambda () (should (equal (project-root (gtags-mode--local-plist)) root)))))))
 
 (gtags-mode-tests-deftest gtags-mode-tests-symlink
-  "Files visited through a symlinked directory use the true name (8c6dafd)."
+  "Files visited through a symlinked directory use the true name (8c6dafd).
+The known project is found without querying global."
   (make-symbolic-link (concat dir "proj/src") (concat dir "link"))
+  (with-current-buffer (find-file-noselect (concat root "src/sub/b.c"))
+    (gtags-mode--local-plist))
   (with-current-buffer (find-file-noselect (concat prefix dir "link/a.c"))
-    (should (equal (project-root (gtags-mode--local-plist)) root))
+    (should-not (gtags-mode-tests--sync-calls
+		 (lambda ()
+		   (should (equal (project-root (gtags-mode--local-plist)) root)))))
     (should (equal gtags-mode--true-file-name (concat root "src/a.c")))
     (should (equal (mapcar #'car (funcall imenu-create-index-function))
 		   '("alpha_one" "alpha_two")))))
