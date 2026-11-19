@@ -13,6 +13,16 @@
 
 (require 'ert)
 (require 'tramp)
+
+;; Coverage, when undercover is installed.  It must instrument
+;; gtags-mode.el before it is loaded.  It is active only on CI or with
+;; UNDERCOVER_FORCE set.
+(when (require 'undercover nil t)
+  (undercover "gtags-mode.el"
+	      (:report-format 'lcov)
+	      (:report-file "coverage.info")
+	      (:send-report nil)))
+
 (require 'gtags-mode)
 
 (add-to-list 'tramp-methods

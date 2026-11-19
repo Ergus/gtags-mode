@@ -1,2 +1,3 @@
 *.elc
 gtags-mode-tests.xml
+coverage.info
