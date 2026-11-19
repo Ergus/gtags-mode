@@ -4,11 +4,12 @@ on:
   push:
     branches: [master]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -20,27 +21,41 @@ jobs:
           version: ${{ matrix.emacs }}
       - name: Install GNU Global
         run: sudo apt-get update && sudo apt-get install -y global
-      # Coverage on one entry only: instrumentation is slow and both
-      # entries run the same code.  The snapshot runs uninstrumented.
+      # Writes the tests table to the job summary.
+      - name: Run tests
+        run: emacs -Q --batch -L . -l .github/report.el
+
+  # Runs only after the tests passed on every Emacs version.
+  coverage:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: purcell/setup-emacs@master
+        with:
+          version: '30.1'
+      - name: Install GNU Global
+        run: sudo apt-get update && sudo apt-get install -y global
       - name: Install undercover
-        if: matrix.emacs == '30.1'
         run: >-
           emacs -Q --batch --eval "(progn (require 'package)
           (add-to-list 'package-archives '(\"melpa\" . \"https://melpa.org/packages/\"))
           (package-initialize) (package-refresh-contents) (package-install 'undercover))"
-      # Writes the tests and coverage tables to the job summary.
-      - name: Run tests
-        run: emacs -Q --batch -f package-activate-all -L . -l .github/report.el
+      # undercover writes coverage.info when Emacs exits.
+      - name: Run tests with coverage
+        run: >-
+          emacs -Q --batch -f package-activate-all -L . -l gtags-mode-tests.el
+          -f ert-run-tests-batch-and-exit
+      - name: Report coverage
+        run: emacs -Q --batch -l .github/coverage.el
       # undercover writes absolute paths; Coveralls maps paths relative
       # to the repository root onto the sources.
       - name: Make coverage paths relative
-        if: always() && hashFiles('coverage.info') != ''
         run: sed -i "s|^SF:$GITHUB_WORKSPACE/|SF:|" coverage.info
       - name: Upload coverage to Coveralls
-        if: always() && hashFiles('coverage.info') != ''
         uses: coverallsapp/github-action@v2
         with:
           file: coverage.info
           format: lcov
-          # A Coveralls outage must not fail the tests.
+          # A Coveralls outage must not fail the workflow.
           fail-on-error: false

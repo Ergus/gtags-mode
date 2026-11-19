@@ -6,9 +6,9 @@
 ;;   emacs -Q --batch -L . -l .github/report.el
 ;;
 ;; Runs gtags-mode-tests.el.  When GITHUB_STEP_SUMMARY is set, appends
-;; a Markdown table of the tests to it, and of the coverage when
-;; coverage.info exists.  Prints a GitHub ::error annotation per failed
-;; test.  Exits with status 1 on unexpected results.
+;; a Markdown table of the tests to it.  Prints a GitHub ::error
+;; annotation per failed test.  Exits with status 1 on unexpected
+;; results.
 
 ;;; Code:
 
@@ -53,32 +53,11 @@
 		       (seq-uniq counts) ", ")
 	    "\n\n| Test | Result | Time |\n|---|---|---|\n" rows "\n" details)))
 
-(defun report--coverage (file)
-  "Return the Markdown report of the LCOV FILE."
-  (with-temp-buffer
-    (insert-file-contents file)
-    (let ((table "## Coverage\n\n| File | Lines | Coverage | Missed lines |\n|---|---|---|---|\n"))
-      (while (re-search-forward "^SF:\\(.*\\)" nil t)
-	(let ((source (file-name-nondirectory (match-string 1)))
-	      (end (save-excursion (re-search-forward "^end_of_record" nil t)))
-	      (total 0) (missed nil))
-	  (while (re-search-forward "^DA:\\([0-9]+\\),\\([0-9]+\\)" end t)
-	    (setq total (1+ total))
-	    (when (string= (match-string 2) "0")
-	      (push (match-string 1) missed)))
-	  (setq table (concat table (format "| %s | %d/%d | %.1f%% | %s |\n"
-					    source (- total (length missed)) total
-					    (/ (* 100.0 (- total (length missed))) (max total 1))
-					    (string-join (nreverse missed) ", "))))))
-      table)))
-
 (let ((stats (ert-run-tests-batch))
       (summary (getenv "GITHUB_STEP_SUMMARY")))
   (let ((report (report--tests)))
     (when summary
-      (write-region report nil summary t 'silent)
-      (when (file-exists-p "coverage.info")
-	(write-region (report--coverage "coverage.info") nil summary t 'silent))))
+      (write-region report nil summary t 'silent)))
   (kill-emacs (if (zerop (ert-stats-completed-unexpected stats)) 0 1)))
 
 ;;; report.el ends here
