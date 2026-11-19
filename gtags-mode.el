@@ -31,7 +31,7 @@
 ;; ggtags, gtags.el, gxref, agtags and some others referenced in:
 ;; https://www.gnu.org/software/global/links.html
 
-;; This package let all the work to the EMACS tools available for such
+;; This package leaves all the work to the EMACS tools available for such
 ;; functions and avoids external dependencies.  Unlike the other
 ;; packages; this module does not create extra special maps, bindings
 ;; or menus, but just adds support to the mentioned features to use
@@ -79,7 +79,7 @@ must be quoted.  For example to use universal-ctags you can set this to:
 
 (defcustom gtags-mode-features '(project xref completion imenu hooks)
   "The list of features enabled in gtags-mode.
-This variable must be set before enabling gtags-mode"
+This variable must be set before enabling gtags-mode."
   :type '(set (const project)
               (const xref)
               (const completion)
@@ -88,13 +88,17 @@ This variable must be set before enabling gtags-mode"
   :risky t)
 
 (defcustom gtags-mode-verbose-level 2
-  "The text displayed in the mode line."
+  "Verbosity of gtags-mode messages.
+Messages of level less than or equal to this value are printed; 0
+prints none.  Level 1 (errors and warnings) also goes to the echo
+area; higher levels only to the *Messages* buffer."
   :type 'natnum
   :risky t)
 
 (defvar gtags-mode--alist nil
-  "Full list of Global roots.
-The address is absolute for remote hosts.")
+  "List of Global project plists, one per root.
+Each plist is shared by the buffers of its project.  Remote roots
+include the remote prefix.")
 (put 'gtags-mode--alist 'risky-local-variable t)
 
 (defvar gtags-mode--no-root-dirs (make-hash-table :test #'equal)
@@ -106,12 +110,21 @@ a new root are removed when its plist is created; the table is
 cleared when a database is created or updated and when the mode is
 toggled.")
 
-(defvar-local gtags-mode--global (executable-find gtags-mode-global-executable))
-(defvar-local gtags-mode--gtags (executable-find gtags-mode-gtags-executable))
+(defvar-local gtags-mode--global (executable-find gtags-mode-global-executable)
+  "Path of the global executable for this buffer, or nil.
+Resolved from `gtags-mode-global-executable'; connection-local in
+remote buffers.")
+(defvar-local gtags-mode--gtags (executable-find gtags-mode-gtags-executable)
+  "Path of the gtags executable for this buffer, or nil.
+Resolved from `gtags-mode-gtags-executable'; connection-local in
+remote buffers.")
 (defvar-local gtags-mode--plist nil
-  "Project Global root for this buffer.")
+  "Global project plist of this buffer, or nil.
+The object is shared with `gtags-mode--alist'.  Keys: `:gtagsroot',
+`:cache' and `:prefix-cache'.  A local nil value means no project
+and is not recomputed.")
 (defvar-local gtags-mode--true-file-name nil
-  "Cached `file-truename' of `buffer-file-name'.
+  "Cached `file-truename' of variable `buffer-file-name'.
 Must stay buffer-local: `gtags-mode--plist' is shared by all the
 buffers of a project.")
 
@@ -124,10 +137,9 @@ buffers of a project.")
   "Command line options to use with `gtags-mode--output-format-regex'.")
 
 (defsubst gtags-mode--message (level format-string &rest args)
-  "Print log messages when the `gtags-mode-verbose' is greater than LEVEL.
-Message with lower verbose level are more important. Messages with level
-lower than 2 are also printed in the echo area as they are considered
-warnings or errors."
+  "Log FORMAT-STRING with ARGS when LEVEL <= `gtags-mode-verbose-level'.
+Level 1 messages (errors and warnings) also go to the echo area;
+higher levels only to the *Messages* buffer."
   (when (>= gtags-mode-verbose-level level)
     (let ((inhibit-message (> level 1)))
       (apply #'message (concat "gtags-mode: " format-string) args))))
@@ -156,7 +168,9 @@ warnings or errors."
 	 (connection-local-set-profiles criteria symvars))))
     (hack-connection-local-variables-apply criteria)))
 
-(defvar gtags-mode--pr-async nil)
+(defvar gtags-mode--pr-async nil
+  "The running asynchronous gtags or global process, or nil.
+At most one runs at a time.")
 
 ;; Async functions
 (defun gtags-mode--exec-async-sentinel (process event)
@@ -193,10 +207,12 @@ This is the sentinel set in `gtags-mode--exec-async'."
 						  (process-get process :start-time))))) ;; Always notify
 
 (defun gtags-mode--exec-async (cmd &rest args)
-  "Run CMD with ARGS on TARGET asynchronously.
-Start an asynchronous process and sets
-`gtags-mode--exec-async-sentinel' as the process sentinel.
-Returns the process object."
+  "Run the executable stored in variable CMD with ARGS asynchronously.
+CMD is `gtags-mode--global' or `gtags-mode--gtags'.  The process runs
+in `default-directory', with `gtags-mode-update-args' before ARGS.
+Return the process, or nil when CMD is nil or another process is
+running.  `gtags-mode--exec-async-sentinel' kills the process buffer
+and, on success, clears the project caches of the calling buffer."
   (let ((executable (symbol-value cmd)))
     (cond
      ((not executable)
@@ -224,8 +240,8 @@ Returns the process object."
 	(setq gtags-mode--pr-async pr))))))
 
 (defun gtags-mode--exec-sync (&rest args)
-  "Run global with ARGS on TARGET synchronously.
-On success return a list of strings or nil if any error occurred."
+  "Run global with ARGS synchronously in `default-directory'.
+Return the output lines, or nil on error."
   (if-let* ((cmd gtags-mode--global)) ;; Required for with-temp-buffer
       (with-temp-buffer
 	(let* ((start-time (current-time))
@@ -248,8 +264,8 @@ On success return a list of strings or nil if any error occurred."
     nil))
 
 (defsubst gtags-mode--get-root (dir)
-  "Get the top dbpath given DIR.
-Includes the remote prefix concatenation when needed."
+  "Return the Global root directory for DIR, or nil.
+The result ends in a slash and includes the remote prefix of DIR."
   (when-let* ((gtags-mode--global)
 	      ;; Suppress any warning when searching the root
 	      ;; because `global' returns an error value when there is
@@ -265,13 +281,14 @@ Includes the remote prefix concatenation when needed."
 
 ;; Utilities functions (a bit less low level) ========================
 (defun gtags-mode--get-plist (dir)
-  "Return the plist for DIR from `gtags-mode--alist'."
+  "Return the plist in `gtags-mode--alist' whose root contains DIR, or nil."
   (seq-find (lambda (plist)
 	      (string-prefix-p (plist-get plist :gtagsroot) dir))
 	    gtags-mode--alist))
 
 (defun gtags-mode--create-plist (dir)
-  "Return dbpath for DIR or nil if none."
+  "Return the plist of the Global project containing DIR, or nil.
+Query global; add a plist to `gtags-mode--alist' for a new root."
   (when-let* ((root (gtags-mode--get-root dir)))
     (gtags-mode--message 2 "Gtags file in %s applies to default-directory: %s" root dir)
     (or (gtags-mode--get-plist root)   ;; already exist
@@ -288,7 +305,10 @@ Includes the remote prefix concatenation when needed."
 		     gtags-mode--alist))))))
 
 (defun gtags-mode--set-local-plist (dir)
-  "Set and return the buffer local value of `gtags-mode--plist'."
+  "Find the project for DIR and store it in `gtags-mode--plist'.
+Apply connection-local variables first.  Query global only when the
+buffer visits a file.  Also set `gtags-mode--true-file-name'.  Return
+the plist, or nil; nil is stored too."
   (let ((default-directory (file-truename dir)))
     (gtags-mode--set-connection-locals)
     (setq-local gtags-mode--plist
@@ -305,7 +325,10 @@ Includes the remote prefix concatenation when needed."
     gtags-mode--plist))
 
 (defun gtags-mode--local-plist (&optional dir)
-  "Set and return the buffer local value of `gtags-mode--plist'."
+  "Return `gtags-mode--plist', computing it for DIR on first call.
+DIR defaults to `default-directory'.  Once set, the local value,
+including nil, is returned without lookups.  Also used in
+`xref-backend-functions'."
   (if (local-variable-p 'gtags-mode--plist)
       gtags-mode--plist
     (gtags-mode--set-local-plist (or dir default-directory))))
@@ -377,9 +400,9 @@ name, code, file, line."
     (error "Calling gtags-mode--filter-find-symbol without GTAGSROOT")))
 
 (defun gtags-mode--update-buffers-plist ()
-  "Actions to perform after creating a database.
-This iterates over the buffers and tries to reset
-`gtags-mode--plist' when it is nil."
+  "Refresh state after `gtags-mode-create' or `gtags-mode-update'.
+Clear `gtags-mode--no-root-dirs' and the caches of all projects, and
+recompute `gtags-mode--plist' in file buffers where it is nil."
   (clrhash gtags-mode--no-root-dirs)
   ;; `gtags-mode-create' may rebuild a project other than the one of
   ;; the parent buffer, whose caches the sentinel clears.
@@ -414,10 +437,10 @@ This iterates over the buffers and tries to reset
 
 ;; Hooks =============================================================
 (defun gtags-mode--after-save-hook ()
-  "After save hook to update GLOBAL database with changed data.
-This function re-checks the local value for gtags-mode--plist or tries
-to set it.  This is needed when saving new created files because they
-won't have `buffer-file-name' but will just acquire one."
+  "Update the Global database for the saved file asynchronously.
+Run `global --single-update' on the file.  Look up the project if not
+done yet: a new buffer acquires variable `buffer-file-name' only on
+its first save."
   (when (and buffer-file-name
 	     (gtags-mode--local-plist default-directory))
     (when-let* ((default-directory (plist-get gtags-mode--plist :gtagsroot))
@@ -444,20 +467,22 @@ Return as a list of xref location objects."
   (gtags-mode--xref-find-symbol '("--definition") symbol))
 
 (cl-defmethod xref-backend-references ((_backend (head :gtagsroot)) symbol)
-  "List all referenced for SYMBOL."
+  "List all references to SYMBOL."
   (gtags-mode--xref-find-symbol '("--reference" "--symbol") symbol))
 
 (cl-defmethod xref-backend-apropos ((_backend (head :gtagsroot)) symbol)
-  "List grepped list of candidates SYMBOL."
+  "List the lines matching the regexp SYMBOL."
   (gtags-mode--xref-find-symbol '("--grep") symbol))
 
 ;; imenu integration =================================================
 (defun gtags-mode--imenu-goto-function (_name line)
-  "Function to goto with imenu when LINE info."
+  "Go to LINE; NAME is ignored.
+Function of the imenu entries built by `gtags-mode--imenu-advice'."
   (funcall-interactively #'goto-line line))
 
 (defun gtags-mode--imenu-advice ()
-  "Make imenu use Global."
+  "Return the imenu index of the current buffer from Global, or nil.
+On nil, the major mode's index function runs."
   (when-let* (((and buffer-file-name (gtags-mode--local-plist default-directory)))
 	      (true-file-name gtags-mode--true-file-name))
     ;; global resolves --file against --directory, i.e. the root.
@@ -521,7 +546,8 @@ from `after-change-major-mode-hook' to wrap the mode's function."
 
 ;; Completion-at-point-function (capf) ===============================
 (defun gtags-mode-completion-function ()
-  "Generate completion list."
+  "Complete the symbol at point with Global symbols.
+For `completion-at-point-functions'; non-exclusive."
   (if (gtags-mode--local-plist default-directory)
       (when-let* ((bounds (bounds-of-thing-at-point 'symbol)))
 	(list (car bounds) (point)
@@ -529,6 +555,7 @@ from `after-change-major-mode-hook' to wrap the mode's function."
 	      :exclusive 'no))))
 
 (defmacro gtags-mode--with-feature (feature &rest body)
+  "Evaluate BODY when FEATURE is in `gtags-mode-features'."
   (declare (indent 1) (debug t))
   `(when (memq ,feature gtags-mode-features)
      ,@body))
