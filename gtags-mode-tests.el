@@ -396,6 +396,8 @@ The known project is found without querying global."
   (let ((a (find-file-noselect (concat root "src/a.c")))
 	(b (find-file-noselect (concat root "src/sub/b.c"))))
     (find-file-noselect (concat other "d.c"))
+    ;; One buffer with the plist already set, one still unset.
+    (with-current-buffer a (gtags-mode--local-plist))
     (should (equal (sort (project-buffers (gtags-mode--project-find root))
 			 :key #'buffer-name)
 		   (sort (list a b) :key #'buffer-name)))))
@@ -417,6 +419,90 @@ The known project is found without querying global."
 	(should-not (seq-some (lambda (f) (and (symbolp f)
 					       (string-prefix-p "gtags-mode-" (symbol-name f))))
 			      (default-value hook)))))))
+
+;; Remaining paths ================================================
+
+(ert-deftest gtags-mode-tests-messages ()
+  "Messages up to `gtags-mode-verbose-level' go to *Messages*."
+  (let ((gtags-mode-verbose-level 2)
+	(inhibit-message t))
+    (gtags-mode--message 2 "level %s" 2)
+    (gtags-mode--message 3 "level %s" 3)
+    (with-current-buffer (messages-buffer)
+      (goto-char (point-max))
+      (should (search-backward "gtags-mode: level 2" nil t))
+      (should-not (search-forward "gtags-mode: level 3" nil t)))))
+
+(ert-deftest gtags-mode-tests-missing-executable ()
+  "Processes do not start without executable."
+  (gtags-mode-tests--with-project
+    (with-temp-buffer
+      ;; No local binding here: `let' binds the default value, which
+      ;; the temporary buffers of the exec functions see.
+      (let ((gtags-mode--gtags nil)
+	    (gtags-mode--global nil)
+	    (default-directory root))
+	(should-not (gtags-mode--exec-async 'gtags-mode--gtags))
+	(should-not gtags-mode--pr-async)
+	(should-not (gtags-mode--exec-sync "--version"))))))
+
+(ert-deftest gtags-mode-tests-connection-local-global ()
+  "A connection-local `gtags-mode-global-executable' is used as is."
+  (skip-unless (gtags-mode-tests--tramp-p))
+  ;; A separate method: the profile of "mock" sets the gtags executable
+  ;; and is applied once per host.
+  (add-to-list 'tramp-methods (cons "mock2" (cdr (assoc "mock" tramp-methods))))
+  (let ((global (executable-find "global")))
+    (connection-local-set-profile-variables
+     'gtags-mode-tests--mock2 `((gtags-mode-global-executable . ,global)))
+    (connection-local-set-profiles
+     '(:application tramp :protocol "mock2") 'gtags-mode-tests--mock2)
+    (with-temp-buffer
+      (setq default-directory "/mock2::/")
+      (gtags-mode--set-connection-locals)
+      (should (equal gtags-mode--global global))
+      ;; Not connection-local: resolved by name on the remote PATH.
+      (should (equal (file-name-nondirectory gtags-mode--gtags) "gtags")))))
+
+(ert-deftest gtags-mode-tests-negative-cache-cleared ()
+  "Creating a plist removes the cached misses under its root."
+  (gtags-mode-tests--with-project
+    (should-not (gtags-mode--project-find other))
+    (gtags-mode-tests--gtags (concat dir "other/"))
+    ;; Still cached: the database was created outside Emacs.
+    (should-not (gtags-mode--project-find other))
+    (with-current-buffer (find-file-noselect (concat other "d.c"))
+      (should (gtags-mode--local-plist)))
+    (should-not (gethash other gtags-mode--no-root-dirs))
+    (should (equal (project-root (gtags-mode--project-find other)) other))))
+
+(ert-deftest gtags-mode-tests-no-project-errors ()
+  "Functions that need a project signal outside one."
+  (gtags-mode-tests--with-project
+    (with-temp-buffer
+      (setq default-directory other)
+      (should-error (gtags-mode--list-completions "x"))
+      (should-error (gtags-mode--filter-find-symbol '("--definition") "x" #'list)))))
+
+(ert-deftest gtags-mode-tests-identifier-completion-table ()
+  "The xref completion table lists all symbols."
+  (gtags-mode-tests--with-project
+    (with-current-buffer (find-file-noselect (concat root "src/a.c"))
+      (should (equal (sort (xref-backend-identifier-completion-table (xref-find-backend)))
+		     '("Beta" "alpha_one" "alpha_two"))))))
+
+(ert-deftest gtags-mode-tests-imenu-goto ()
+  "Selecting an imenu entry moves to its line."
+  (gtags-mode-tests--with-project
+    (with-current-buffer (find-file-noselect (concat root "src/a.c"))
+      (imenu (assoc "alpha_two" (funcall imenu-create-index-function)))
+      (should (= (line-number-at-pos) 2)))))
+
+(gtags-mode-tests-deftest gtags-mode-tests-project-files-dirs
+  "`project-files' with several DIRS removes duplicates."
+  (should (equal (sort (project-files (gtags-mode--project-find root)
+				      (list (concat root "src/") (concat root "src/sub/"))))
+		 (list (concat root "src/a.c") (concat root "src/sub/b.c")))))
 
 ;; mode line =========================================================
 
