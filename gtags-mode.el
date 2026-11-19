@@ -197,27 +197,31 @@ This is the sentinel set in `gtags-mode--exec-async'."
 Start an asynchronous process and sets
 `gtags-mode--exec-async-sentinel' as the process sentinel.
 Returns the process object."
-  (if-let* ((cmd (buffer-local-value cmd (current-buffer)))
-	    (command (append `(,cmd) (split-string-shell-command gtags-mode-update-args) args))
-	    (start-time (current-time))
-	    ((if (not gtags-mode--pr-async)
-		t
-	      (gtags-mode--message 1 "Cannot run command: There is a gtags or global process already running.")
-	      nil))
-	    (pr (make-process :name (format "%s-async" cmd)
-			      :buffer (generate-new-buffer " *temp*" t)
-			      :command command
-			      :sentinel #'gtags-mode--exec-async-sentinel
-			      :file-handler t)))
-      (progn
+  (let ((executable (symbol-value cmd)))
+    (cond
+     ((not executable)
+      (gtags-mode--message 1 "Can't start async process: `%s' is nil" cmd)
+      nil)
+     (gtags-mode--pr-async
+      (gtags-mode--message 1 "Cannot run command: There is a gtags or global process already running.")
+      nil)
+     (t
+      (let* ((command (append `(,executable)
+			      (split-string-shell-command gtags-mode-update-args)
+			      args))
+	     (start-time (current-time))
+	     ;; Signals on failure instead of returning nil.
+	     (pr (make-process :name (format "%s-async" executable)
+			       :buffer (generate-new-buffer " *temp*" t)
+			       :command command
+			       :sentinel #'gtags-mode--exec-async-sentinel
+			       :file-handler t)))
 	(gtags-mode--message 2 "Starting async process: %s" command)
 	;; In future not needed with `remote-commands'.
 	(set-process-plist pr (list :parent-buffer (current-buffer)
 				    :command command
 				    :start-time start-time))
-	(setq gtags-mode--pr-async pr))
-    (gtags-mode--message 1 "Can't start async %s subprocess" cmd)
-    nil))
+	(setq gtags-mode--pr-async pr))))))
 
 (defun gtags-mode--exec-sync (&rest args)
   "Run global with ARGS on TARGET synchronously.
@@ -240,7 +244,7 @@ On success return a list of strings or nil if any error occurred."
 				 cmd args status
 				 (float-time (time-subtract (current-time) start-time)))
 	    nil)))
-    (gtags-mode--message 1 "Can't start sync %s subprocess" cmd)
+    (gtags-mode--message 1 "Can't start sync process: `gtags-mode--global' is nil")
     nil))
 
 (defsubst gtags-mode--get-root (dir)
@@ -348,7 +352,7 @@ not cached."
 	    (gtags-mode--exec-sync
 	     "--directory" root
 	     (if completion-ignore-case "--ignore-case" "--match-case")
-	     "--through" "--completion" prefix)))
+	     "--through" "--completion" "--" prefix)))
       (with-memoization (plist-get gtags-mode--plist :cache)
 	(gtags-mode--exec-sync "--directory" root "--through" "--completion")))))
 
@@ -368,9 +372,9 @@ name, code, file, line."
 				(string-to-number (match-string-no-properties 3 line))))) ;; line
 		   (apply #'gtags-mode--exec-sync
 			  (append gtags-mode--output-format-options args
-				  `("--directory" ,(file-local-name root) ,symbol)))))
-    (error "Calling gtags-mode--filter-find-symbol without GTAGSROOT")
-    nil))
+				  ;; "--" ends options: SYMBOL may start with "-".
+				  `("--directory" ,(file-local-name root) "--" ,symbol)))))
+    (error "Calling gtags-mode--filter-find-symbol without GTAGSROOT")))
 
 (defun gtags-mode--update-buffers-plist ()
   "Actions to perform after creating a database.
@@ -382,8 +386,8 @@ This iterates over the buffers and tries to reset
   (dolist (plist gtags-mode--alist)
     (plist-put plist :cache nil)
     (plist-put plist :prefix-cache nil))
+  (gtags-mode--message 2 "Updating all buffers")
   (dolist (buff (buffer-list))
-    (gtags-mode--message 2 "Updating all buffers")
     (with-current-buffer buff
       (when (and buffer-file-name (not gtags-mode--plist))
 	(gtags-mode--set-connection-locals)
@@ -535,7 +539,8 @@ from `after-change-major-mode-hook' to wrap the mode's function."
 When the buffer is not in a global-project, then all these tools
 rely on their original or user configured default behavior."
   :global t
-  :lighter gtags-mode-lighter
+  ;; Only in buffers of a Global project.
+  :lighter (:eval (and gtags-mode--plist gtags-mode-lighter))
   (clrhash gtags-mode--no-root-dirs)
   (cond
    (gtags-mode
