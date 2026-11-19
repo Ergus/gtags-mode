@@ -222,6 +222,21 @@ names when `gtags-mode-tests-remote' is non-nil."
       (let ((capf (gtags-mode-completion-function)))
 	(should (equal (all-completions "alpha_" (nth 2 capf)) '("alpha_one" "alpha_two")))))))
 
+(ert-deftest gtags-mode-tests-capf-styles ()
+  "Non-prefix completion styles match inside symbols.
+They query the table with an empty prefix, which returns the full list."
+  (gtags-mode-tests--with-project
+    (with-current-buffer (find-file-noselect (concat root "src/a.c"))
+      (goto-char (point-max))
+      (insert "pha")
+      (let ((table (nth 2 (gtags-mode-completion-function))))
+	(dolist (style '(substring flex))
+	  (let* ((completion-styles (list style))
+		 (result (completion-all-completions "pha" table nil 3)))
+	    (setcdr (last result) nil)  ; drop the base size
+	    (should (equal (sort (mapcar #'substring-no-properties result))
+			   '("alpha_one" "alpha_two")))))))))
+
 ;; imenu =============================================================
 
 (gtags-mode-tests-deftest gtags-mode-tests-imenu
