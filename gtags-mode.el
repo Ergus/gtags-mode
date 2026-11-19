@@ -213,7 +213,9 @@ in `default-directory', with `gtags-mode-update-args' before ARGS.
 Return the process, or nil when CMD is nil or another process is
 running.  `gtags-mode--exec-async-sentinel' kills the process buffer
 and, on success, clears the project caches of the calling buffer."
-  (let ((executable (symbol-value cmd)))
+  (let ((executable (with-temp-buffer ;; inherits `default-directory'
+		      (gtags-mode--set-connection-locals)
+		      (symbol-value cmd))))
     (cond
      ((not executable)
       (gtags-mode--message 1 "Can't start async process: `%s' is nil" cmd)
@@ -242,8 +244,11 @@ and, on success, clears the project caches of the calling buffer."
 (defun gtags-mode--exec-sync (&rest args)
   "Run global with ARGS synchronously in `default-directory'.
 Return the output lines, or nil on error."
-  (if-let* ((cmd gtags-mode--global)) ;; Required for with-temp-buffer
-      (with-temp-buffer
+  (with-temp-buffer
+    ;; The temporary buffer inherits `default-directory': resolve the
+    ;; executable for its host, not the calling buffer's.
+    (gtags-mode--set-connection-locals)
+    (if-let* ((cmd gtags-mode--global))
 	(let* ((start-time (current-time))
 	       (status (apply #'process-file cmd nil (current-buffer) nil args))
 	       (output (string-trim
@@ -259,9 +264,9 @@ Return the output lines, or nil on error."
 	    (gtags-mode--message 1 "Sync %s %s: exited abnormally with code: %s elapsed: %.06f"
 				 cmd args status
 				 (float-time (time-subtract (current-time) start-time)))
-	    nil)))
-    (gtags-mode--message 1 "Can't start sync process: `gtags-mode--global' is nil")
-    nil))
+	    nil))
+      (gtags-mode--message 1 "Can't start sync process: `gtags-mode--global' is nil")
+      nil)))
 
 (defsubst gtags-mode--get-root (dir)
   "Return the Global root directory for DIR, or nil.
