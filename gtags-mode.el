@@ -440,12 +440,15 @@ recompute `gtags-mode--plist' in file buffers where it is nil."
 	      (pr (gtags-mode--exec-async 'gtags-mode--gtags)))
     (process-put pr :extra-sentinel #'gtags-mode--update-buffers-plist)))
 
+;;;###autoload
 (defun gtags-mode-update ()
-  "Update GLOBAL project database."
+  "Update the Global database of the current project asynchronously.
+Signal a `user-error' when the buffer is not in a Global project."
   (interactive)
-  (when-let*  (((gtags-mode--local-plist default-directory))
-	       (default-directory (plist-get gtags-mode--plist :gtagsroot))
-	       (pr (gtags-mode--exec-async 'gtags-mode--global "--update")))
+  (unless (gtags-mode--local-plist default-directory)
+    (user-error "No Global project for %s" default-directory))
+  (when-let* ((default-directory (plist-get gtags-mode--plist :gtagsroot))
+	      (pr (gtags-mode--exec-async 'gtags-mode--global "--update")))
     (process-put pr :extra-sentinel #'gtags-mode--update-buffers-plist)))
 
 ;; Hooks =============================================================
@@ -625,8 +628,20 @@ rely on their original or user configured default behavior."
     (remove-hook 'completion-at-point-functions #'gtags-mode-completion-function)
     (remove-hook 'after-save-hook #'gtags-mode--after-save-hook)
     (remove-hook 'after-change-major-mode-hook #'gtags-mode--imenu-setup)
+    (when-let* ((pr gtags-mode--pr-async))
+      ;; No sentinel: it would report the kill as an error and run the
+      ;; extra sentinel.
+      (set-process-sentinel pr #'ignore)
+      (delete-process pr)
+      (kill-buffer (process-buffer pr))
+      (setq gtags-mode--pr-async nil))
+    ;; Plists and caches go stale while the mode is off.
+    (setq gtags-mode--alist nil)
     (dolist (buff (buffer-list))
-      (with-current-buffer buff (gtags-mode--imenu-teardown))))))
+      (with-current-buffer buff
+	(gtags-mode--imenu-teardown)
+	(kill-local-variable 'gtags-mode--plist)
+	(kill-local-variable 'gtags-mode--true-file-name))))))
 
 (provide 'gtags-mode)
 ;;; gtags-mode.el ends here

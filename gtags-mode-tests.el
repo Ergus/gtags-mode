@@ -420,6 +420,33 @@ The known project is found without querying global."
 					       (string-prefix-p "gtags-mode-" (symbol-name f))))
 			      (default-value hook)))))))
 
+(ert-deftest gtags-mode-tests-update-outside-project ()
+  "`gtags-mode-update' signals outside a project."
+  (gtags-mode-tests--with-project
+    (with-current-buffer (find-file-noselect (concat other "d.c"))
+      (should-error (gtags-mode-update) :type 'user-error))))
+
+(ert-deftest gtags-mode-tests-disable-cleanup ()
+  "Disabling the mode kills the async process and forgets all projects."
+  (gtags-mode-tests--with-project
+    (with-current-buffer (find-file-noselect (concat root "src/a.c"))
+      (gtags-mode--list-completions nil)
+      (gtags-mode-update)
+      (let ((pr gtags-mode--pr-async)
+	    (count (length (buffer-list))))
+	(should (process-live-p pr))
+	(gtags-mode -1)
+	(should-not (process-live-p pr))
+	(should-not gtags-mode--pr-async)
+	(should-not (buffer-live-p (process-buffer pr)))
+	(should (= (length (buffer-list)) (1- count))))
+      (should-not gtags-mode--alist)
+      (should-not (local-variable-p 'gtags-mode--plist))
+      (should-not (local-variable-p 'gtags-mode--true-file-name))
+      ;; Re-enabling looks the project up again.
+      (gtags-mode 1)
+      (should (equal (project-root (gtags-mode--local-plist)) root)))))
+
 ;; Remaining paths ================================================
 
 (ert-deftest gtags-mode-tests-messages ()
