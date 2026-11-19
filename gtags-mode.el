@@ -230,13 +230,8 @@ On success return a list of strings or nil if any error occurred."
 (defsubst gtags-mode--get-root (dir)
   "Get the top dbpath given DIR.
 Includes the remote prefix concatenation when needed."
-  ;; The first check is an Heuristic to create new plists only when
-  ;; visiting real files This optimizes when there is not tags file to
-  ;; avoid calling the external process repeatedly i.e in magit
-  ;; buffers that are regenerated every time and forgets the local
-  ;; variables
-  (when-let* (((and gtags-mode--global buffer-file-name))
-	      ;; Then suppress any warning when searching the root
+  (when-let* ((gtags-mode--global)
+	      ;; Suppress any warning when searching the root
 	      ;; because `global' returns an error value when there is
 	      ;; not dbpath found.
 	      (gtags-mode-verbose-level 0)
@@ -268,7 +263,13 @@ Includes the remote prefix concatenation when needed."
     (gtags-mode--set-connection-locals)
     (setq-local gtags-mode--plist
 		(or (gtags-mode--get-plist default-directory)
-		    (gtags-mode--create-plist default-directory)))
+		    ;; Heuristic: create new plists only when visiting
+		    ;; real files.  This avoids calling the external
+		    ;; process repeatedly when there is no tags file, i.e
+		    ;; in magit buffers that are regenerated every time
+		    ;; and forget the local variables.
+		    (and buffer-file-name
+			 (gtags-mode--create-plist default-directory))))
     (when (and gtags-mode--plist buffer-file-name)
       (setq-local gtags-mode--true-file-name (file-truename buffer-file-name)))
     gtags-mode--plist))
@@ -278,6 +279,25 @@ Includes the remote prefix concatenation when needed."
   (if (local-variable-p 'gtags-mode--plist)
       gtags-mode--plist
     (gtags-mode--set-local-plist (or dir default-directory))))
+
+(defun gtags-mode--project-find (dir)
+  "Return the Global project plist containing DIR, or nil.
+For `project-find-functions'.  DIR may be unrelated to the current
+buffer (e.g. `project-switch-project'); in that case the lookup
+neither reads nor sets the buffer-local `gtags-mode--plist', and
+connection-local variables are applied in a temporary buffer."
+  (let ((dir (file-name-as-directory (expand-file-name dir))))
+    (if (string= dir (file-name-as-directory (expand-file-name default-directory)))
+	(gtags-mode--local-plist dir)
+      ;; No `file-truename': it is expensive over TRAMP, and on a miss
+      ;; `global --print-dbpath' returns the resolved root, which
+      ;; `gtags-mode--create-plist' matches against existing plists.
+      (or (gtags-mode--get-plist dir)
+	  (and (file-directory-p dir)
+	       (with-temp-buffer
+		 (setq default-directory dir)
+		 (gtags-mode--set-connection-locals)
+		 (gtags-mode--create-plist dir)))))))
 
 (defvar-local gtags-mode--list-cache-plist nil)
 
@@ -497,7 +517,7 @@ rely on their original or user configured default behavior."
   (cond
    (gtags-mode
     (gtags-mode--with-feature 'project
-      (add-hook 'project-find-functions #'gtags-mode--local-plist))
+      (add-hook 'project-find-functions #'gtags-mode--project-find))
     (gtags-mode--with-feature 'xref
       (add-hook 'xref-backend-functions #'gtags-mode--local-plist))
     (gtags-mode--with-feature 'completion
@@ -510,7 +530,7 @@ rely on their original or user configured default behavior."
       (dolist (buff (buffer-list))
 	(with-current-buffer buff (gtags-mode--imenu-setup)))))
    (t
-    (remove-hook 'project-find-functions #'gtags-mode--local-plist)
+    (remove-hook 'project-find-functions #'gtags-mode--project-find)
     (remove-hook 'xref-backend-functions #'gtags-mode--local-plist)
     (remove-hook 'completion-at-point-functions #'gtags-mode-completion-function)
     (remove-hook 'after-save-hook #'gtags-mode--after-save-hook)
