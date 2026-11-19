@@ -281,7 +281,9 @@ The result ends in a slash and includes the remote prefix of DIR."
 
 ;; Utilities functions (a bit less low level) ========================
 (defun gtags-mode--get-plist (dir)
-  "Return the plist in `gtags-mode--alist' whose root contains DIR, or nil."
+  "Return the plist in `gtags-mode--alist' whose root contains DIR, or nil.
+With nested roots, return the innermost: the list is sorted by
+decreasing root length."
   (seq-find (lambda (plist)
 	      (string-prefix-p (plist-get plist :gtagsroot) dir))
 	    gtags-mode--alist))
@@ -291,18 +293,24 @@ The result ends in a slash and includes the remote prefix of DIR."
 Query global; add a plist to `gtags-mode--alist' for a new root."
   (when-let* ((root (gtags-mode--get-root dir)))
     (gtags-mode--message 2 "Gtags file in %s applies to default-directory: %s" root dir)
-    (or (gtags-mode--get-plist root)   ;; already exist
-	(progn
+    ;; Exact match: `gtags-mode--get-plist' would return an enclosing
+    ;; root for a new nested one.
+    (or (seq-find (lambda (plist) (string= root (plist-get plist :gtagsroot)))
+		  gtags-mode--alist)
+	;; All keys must exist: `plist-put' and `with-memoization' then
+	;; modify the plist shared by the project buffers in place
+	;; instead of consing a buffer-local copy.
+	(let ((plist (list :gtagsroot root :cache nil :prefix-cache nil)))
 	  ;; The database may have been created outside Emacs.
 	  (maphash (lambda (key _)
 		     (when (string-prefix-p root key)
 		       (remhash key gtags-mode--no-root-dirs)))
 		   gtags-mode--no-root-dirs)
-	  ;; All keys must exist: `plist-put' and `with-memoization'
-	  ;; then modify the plist shared by the project buffers in
-	  ;; place instead of consing a buffer-local copy.
-	  (car (push `(:gtagsroot ,root :cache nil :prefix-cache nil)
-		     gtags-mode--alist))))))
+	  (setq gtags-mode--alist
+		(sort (cons plist gtags-mode--alist)
+		      :key (lambda (p) (length (plist-get p :gtagsroot)))
+		      :reverse t))
+	  plist))))
 
 (defun gtags-mode--set-local-plist (dir)
   "Find the project for DIR and store it in `gtags-mode--plist'.
@@ -470,9 +478,31 @@ Return as a list of xref location objects."
   "List all references to SYMBOL."
   (gtags-mode--xref-find-symbol '("--reference" "--symbol") symbol))
 
-(cl-defmethod xref-backend-apropos ((_backend (head :gtagsroot)) symbol)
-  "List the lines matching the regexp SYMBOL."
-  (gtags-mode--xref-find-symbol '("--grep") symbol))
+(cl-defmethod xref-backend-apropos ((_backend (head :gtagsroot)) pattern)
+  "List the definitions of the symbols matching PATTERN.
+PATTERN follows `xref-find-apropos': a regexp, or words of which a
+symbol must contain at least two (or the only one).  global selects
+candidates with an extended regexp; `xref-apropos-regexp' filters
+them.  Regexps using Emacs-only syntax (e.g. \\_<) find nothing.
+Case folding follows `case-fold-search'."
+  (require 'apropos)                    ;; for `xref-apropos-regexp'
+  (let* ((regexp (xref-apropos-regexp pattern))
+	 (candidates
+	  (if (string-equal (regexp-quote pattern) pattern)
+	      ;; Word list: symbols containing any of the words.
+	      (concat "("
+		      (mapconcat
+		       (lambda (word)
+			 (replace-regexp-in-string "[](){}|.*+?^$\\[]" "\\\\\\&" word))
+		       (split-string pattern "[ \t]+" t) "|")
+		      ")")
+	    pattern)))
+    (gtags-mode--filter-find-symbol
+     (list "--definition" (if case-fold-search "--ignore-case" "--match-case"))
+     candidates
+     (lambda (name code file line)
+       (when (string-match-p regexp name)
+	 (xref-make code (xref-make-file-location file line 0)))))))
 
 ;; imenu integration =================================================
 (defun gtags-mode--imenu-goto-function (_name line)
