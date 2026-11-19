@@ -164,11 +164,14 @@ This is the sentinel set in `gtags-mode--exec-async'."
 	      (funcall extra-sentinel))
 	    (when gtags-mode--plist                    ;; clear cache
 	      (setq gtags-mode--plist (plist-put gtags-mode--plist :cache nil))))))
-    (with-current-buffer (process-buffer process)      ;; In failure print error
-      (while (accept-process-output process))
-      (gtags-mode--message 1 "Global async error output:\n%s"
-			   (string-trim
-			    (buffer-substring-no-properties (point-min) (point-max))))))
+    (let ((temp-buffer (process-buffer process)))      ;; In failure print error
+      (when (buffer-live-p temp-buffer)
+	(with-current-buffer temp-buffer
+	  (while (accept-process-output process))
+	  (gtags-mode--message 1 "Global async error output:\n%s"
+			       (string-trim
+				(buffer-substring-no-properties (point-min) (point-max)))))
+	(kill-buffer temp-buffer))))
   (setq gtags-mode--pr-async nil)
   (gtags-mode--message 2 "Async %s: result: %s elapsed: %.06f"
 		       (process-get process :command)
