@@ -98,6 +98,10 @@ The address is absolute for remote hosts.")
 (defvar-local gtags-mode--gtags (executable-find gtags-mode-gtags-executable))
 (defvar-local gtags-mode--plist nil
   "Project Global root for this buffer.")
+(defvar-local gtags-mode--true-file-name nil
+  "Cached `file-truename' of `buffer-file-name'.
+Must stay buffer-local: `gtags-mode--plist' is shared by all the
+buffers of a project.")
 
 (defconst gtags-mode--output-format-regex
   "^\\(.+?\\) \\([^ ]+\\) \\([[:digit:]]+\\) \\(.*\\)"
@@ -266,9 +270,8 @@ Includes the remote prefix concatenation when needed."
 		(or (gtags-mode--get-plist default-directory)
 		    (gtags-mode--create-plist default-directory)))
     (when (and gtags-mode--plist buffer-file-name)
-      (setq-local gtags-mode--plist
-		  (plist-put gtags-mode--plist
-			     :true-file-name (file-truename buffer-file-name))))))
+      (setq-local gtags-mode--true-file-name (file-truename buffer-file-name)))
+    gtags-mode--plist))
 
 (defun gtags-mode--local-plist (&optional dir)
   "Set and return the buffer local value of `gtags-mode--plist'."
@@ -371,7 +374,7 @@ won't have `buffer-file-name' but will just acquire one."
   (when (and buffer-file-name
 	     (gtags-mode--local-plist default-directory))
     (when-let* ((default-directory (plist-get gtags-mode--plist :gtagsroot))
-		(true-file-name (plist-get gtags-mode--plist :true-file-name))
+		(true-file-name gtags-mode--true-file-name)
 		(pr (gtags-mode--exec-async
 		     'gtags-mode--global "--single-update" (file-relative-name true-file-name))))
       (process-put pr :extra-sentinel (lambda ()
