@@ -94,6 +94,15 @@ This variable must be set before enabling gtags-mode"
 The address is absolute for remote hosts.")
 (put 'gtags-mode--alist 'risky-local-variable t)
 
+(defvar gtags-mode--no-root-dirs (make-hash-table :test #'equal)
+  "Directories known to be outside any Global project.
+Keys are expanded directory names, with a trailing slash.  Avoids
+running `global --print-dbpath' (a round trip over TRAMP) on every
+`gtags-mode--project-find' call for such a directory.  Entries under
+a new root are removed when its plist is created; the table is
+cleared when a database is created or updated and when the mode is
+toggled.")
+
 (defvar-local gtags-mode--global (executable-find gtags-mode-global-executable))
 (defvar-local gtags-mode--gtags (executable-find gtags-mode-gtags-executable))
 (defvar-local gtags-mode--plist nil
@@ -258,7 +267,13 @@ Includes the remote prefix concatenation when needed."
   (when-let* ((root (gtags-mode--get-root dir)))
     (gtags-mode--message 2 "Gtags file in %s applies to default-directory: %s" root dir)
     (or (gtags-mode--get-plist root)   ;; already exist
-	(car (push `(:gtagsroot ,root :cache nil) gtags-mode--alist)))))
+	(progn
+	  ;; The database may have been created outside Emacs.
+	  (maphash (lambda (key _)
+		     (when (string-prefix-p root key)
+		       (remhash key gtags-mode--no-root-dirs)))
+		   gtags-mode--no-root-dirs)
+	  (car (push `(:gtagsroot ,root :cache nil) gtags-mode--alist))))))
 
 (defun gtags-mode--set-local-plist (dir)
   "Set and return the buffer local value of `gtags-mode--plist'."
@@ -296,11 +311,14 @@ connection-local variables are applied in a temporary buffer."
       ;; `global --print-dbpath' returns the resolved root, which
       ;; `gtags-mode--create-plist' matches against existing plists.
       (or (gtags-mode--get-plist dir)
-	  (and (file-directory-p dir)
-	       (with-temp-buffer
-		 (setq default-directory dir)
-		 (gtags-mode--set-connection-locals)
-		 (gtags-mode--create-plist dir)))))))
+	  (and (not (gethash dir gtags-mode--no-root-dirs))
+	       ;; Not cached when missing: the directory may appear later.
+	       (file-directory-p dir)
+	       (or (with-temp-buffer
+		     (setq default-directory dir)
+		     (gtags-mode--set-connection-locals)
+		     (gtags-mode--create-plist dir))
+		   (ignore (puthash dir t gtags-mode--no-root-dirs))))))))
 
 (defvar-local gtags-mode--list-cache-plist nil)
 
@@ -360,6 +378,7 @@ name, code, file, line."
   "Actions to perform after creating a database.
 This iterates over the buffers and tries to reset
 `gtags-mode--plist' when it is nil."
+  (clrhash gtags-mode--no-root-dirs)
   (dolist (buff (buffer-list))
     (gtags-mode--message 2 "Updating all buffers")
     (with-current-buffer buff
@@ -517,6 +536,7 @@ When the buffer is not in a global-project, then all these tools
 rely on their original or user configured default behavior."
   :global t
   :lighter gtags-mode-lighter
+  (clrhash gtags-mode--no-root-dirs)
   (cond
    (gtags-mode
     (gtags-mode--with-feature 'project
