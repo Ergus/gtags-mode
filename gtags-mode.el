@@ -418,6 +418,21 @@ Return as a list of xref location objects."
      (lambda (name _code _file line)
        (list name line #'gtags-mode--imenu-goto-function)))))
 
+(defun gtags-mode--imenu-setup ()
+  "Install `gtags-mode--imenu-advice' in the current buffer.
+imenu calls the value of `imenu-create-index-function', which major
+modes set buffer-locally, so the advice goes on the local value.  Runs
+from `after-change-major-mode-hook' to wrap the mode's function."
+  (add-function :before-until (local 'imenu-create-index-function)
+		#'gtags-mode--imenu-advice))
+
+(defun gtags-mode--imenu-teardown ()
+  "Remove `gtags-mode--imenu-advice' from the current buffer."
+  ;; The check avoids creating a local binding in untouched buffers.
+  (when (local-variable-p 'imenu-create-index-function)
+    (remove-function (local 'imenu-create-index-function)
+		     #'gtags-mode--imenu-advice)))
+
 ;; project integration ===============================================
 
 (cl-defmethod project-root ((project (head :gtagsroot)))
@@ -487,13 +502,18 @@ rely on their original or user configured default behavior."
     (gtags-mode--with-feature 'hooks
       (add-hook 'after-save-hook #'gtags-mode--after-save-hook))
     (gtags-mode--with-feature 'imenu
-      (advice-add 'imenu-create-index-function :before-until #'gtags-mode--imenu-advice)))
+      (require 'imenu)
+      (add-hook 'after-change-major-mode-hook #'gtags-mode--imenu-setup)
+      (dolist (buff (buffer-list))
+	(with-current-buffer buff (gtags-mode--imenu-setup)))))
    (t
     (remove-hook 'project-find-functions #'gtags-mode--local-plist)
     (remove-hook 'xref-backend-functions #'gtags-mode--local-plist)
     (remove-hook 'completion-at-point-functions #'gtags-mode-completion-function)
     (remove-hook 'after-save-hook #'gtags-mode--after-save-hook)
-    (advice-remove 'imenu-create-index-function #'gtags-mode--imenu-advice))))
+    (remove-hook 'after-change-major-mode-hook #'gtags-mode--imenu-setup)
+    (dolist (buff (buffer-list))
+      (with-current-buffer buff (gtags-mode--imenu-teardown))))))
 
 (provide 'gtags-mode)
 ;;; gtags-mode.el ends here
