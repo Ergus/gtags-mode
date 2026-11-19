@@ -95,6 +95,10 @@ area; higher levels only to the *Messages* buffer."
   :type 'natnum
   :risky t)
 
+(defcustom gtags-mode-use-annotation t
+  "Whether to use annotation on completions."
+  :type 'boolean)
+
 (defvar gtags-mode--alist nil
   "List of Global project plists, one per root.
 Each plist is shared by the buffers of its project.  Remote roots
@@ -580,6 +584,21 @@ from `after-change-major-mode-hook' to wrap the mode's function."
 		(buffer-list))))
 
 ;; Completion-at-point-function (capf) ===============================
+(defun gtags-mode-annotation-function (string)
+  "Generate completion annotation.
+The annotation is defined as the substring of STRING beginning with the
+first opening parenthesis, and until either the first closing
+parenthesis, or the end of STRING, whatever comes first."
+  (when gtags-mode-use-annotation
+    (and-let*
+	((whole (car (gtags-mode--filter-find-symbol
+		      '("--definition") string
+		      (lambda (_name code _file _line)
+			code))))
+	 (index (or (string-match "\\(([^)]*)\\)" whole) ; try first with closing parenthesis
+		    (string-match "\\((.*\\)$" whole)))  ; then take until end of string
+	 (output (concat " " (match-string-no-properties 1 whole)))))))
+
 (defun gtags-mode-completion-function ()
   "Complete the symbol at point with Global symbols.
 For `completion-at-point-functions'; non-exclusive."
@@ -587,7 +606,8 @@ For `completion-at-point-functions'; non-exclusive."
       (when-let* ((bounds (bounds-of-thing-at-point 'symbol)))
 	(list (car bounds) (point)
 	      (completion-table-dynamic #'gtags-mode--list-completions)
-	      :exclusive 'no))))
+	      :exclusive 'no
+	      :annotation-function #'gtags-mode-annotation-function))))
 
 (defmacro gtags-mode--with-feature (feature &rest body)
   "Evaluate BODY when FEATURE is in `gtags-mode-features'."
