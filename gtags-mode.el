@@ -173,8 +173,9 @@ This is the sentinel set in `gtags-mode--exec-async'."
 	  (with-current-buffer parent-buffer
 	    (when (functionp extra-sentinel)           ;; run extra sentinel
 	      (funcall extra-sentinel))
-	    (when gtags-mode--plist                    ;; clear cache
-	      (setq gtags-mode--plist (plist-put gtags-mode--plist :cache nil))))))
+	    (when gtags-mode--plist                    ;; clear project caches
+	      (setq gtags-mode--plist (plist-put gtags-mode--plist :cache nil))
+	      (setq gtags-mode--plist (plist-put gtags-mode--plist :prefix-cache nil))))))
     (let ((temp-buffer (process-buffer process)))      ;; In failure print error
       (when (buffer-live-p temp-buffer)
 	(with-current-buffer temp-buffer
@@ -275,7 +276,11 @@ Includes the remote prefix concatenation when needed."
 		     (when (string-prefix-p root key)
 		       (remhash key gtags-mode--no-root-dirs)))
 		   gtags-mode--no-root-dirs)
-	  (car (push `(:gtagsroot ,root :cache nil) gtags-mode--alist))))))
+	  ;; All keys must exist: `plist-put' and `with-memoization'
+	  ;; then modify the plist shared by the project buffers in
+	  ;; place instead of consing a buffer-local copy.
+	  (car (push `(:gtagsroot ,root :cache nil :prefix-cache nil)
+		     gtags-mode--alist))))))
 
 (defun gtags-mode--set-local-plist (dir)
   "Set and return the buffer local value of `gtags-mode--plist'."
@@ -322,39 +327,29 @@ connection-local variables are applied in a temporary buffer."
 		     (gtags-mode--create-plist dir))
 		   (ignore (puthash dir t gtags-mode--no-root-dirs))))))))
 
-(defvar-local gtags-mode--list-cache-plist nil)
-
 (defun gtags-mode--list-completions (prefix)
   "Get the list of completions for PREFIX.
 When PREFIX is nil or empty; return the entire list of
-completions usually from the cache when possible."
-  (cond ;; TODO: use with-memoization in the future it will be on emacs 29.1
-   ((not (gtags-mode--local-plist default-directory))
-    (error "Calling `gtags-mode--list-completions' with no gtags-mode--plist"))
-   ((and (stringp prefix)
-	 (not (string-blank-p prefix))) ;; not match empty or only -
-    (if-let* ((key (intern prefix))
-	      (value (plist-get gtags-mode--list-cache-plist key)))
-	value
-      (setq value (gtags-mode--exec-sync
-		   "--directory"
-		   (file-local-name
-		    (plist-get (gtags-mode--local-plist default-directory) :gtagsroot))
-		   (if completion-ignore-case "--ignore-case" "--match-case")
-		   "--through" "--completion"
-		   (substring-no-properties prefix)))
-      (setq gtags-mode--list-cache-plist
-	    (plist-put gtags-mode--list-cache-plist key value))
-      value))
-   ((plist-get gtags-mode--plist :cache))
-   (t (setq gtags-mode--plist
-	    (plist-put gtags-mode--plist
-		       :cache (gtags-mode--exec-sync
-			       "--directory"
-			       (file-local-name
-				(plist-get (gtags-mode--local-plist default-directory) :gtagsroot))
-			       "--through" "--completion")))
-      (plist-get gtags-mode--plist :cache))))
+completions.  Both results are cached in the project plist:
+`:cache' holds the entire list and `:prefix-cache' a hash table
+keyed on (PREFIX . `completion-ignore-case').  Nil results are
+not cached."
+  (let* ((plist (or (gtags-mode--local-plist default-directory)
+		    (error "Calling `gtags-mode--list-completions' with no gtags-mode--plist")))
+	 (root (file-local-name (plist-get plist :gtagsroot))))
+    (if (and (stringp prefix)
+	     (not (string-blank-p prefix))) ;; not match empty or only -
+	(let ((prefix (substring-no-properties prefix)))
+	  (with-memoization
+	      (gethash (cons prefix completion-ignore-case)
+		       (with-memoization (plist-get gtags-mode--plist :prefix-cache)
+			 (make-hash-table :test #'equal)))
+	    (gtags-mode--exec-sync
+	     "--directory" root
+	     (if completion-ignore-case "--ignore-case" "--match-case")
+	     "--through" "--completion" prefix)))
+      (with-memoization (plist-get gtags-mode--plist :cache)
+	(gtags-mode--exec-sync "--directory" root "--through" "--completion")))))
 
 (defun gtags-mode--filter-find-symbol (args symbol creator)
   "Run `gtags-mode--exec-sync' with ARGS on SYMBOL and filter output with CREATOR.
@@ -381,15 +376,18 @@ name, code, file, line."
 This iterates over the buffers and tries to reset
 `gtags-mode--plist' when it is nil."
   (clrhash gtags-mode--no-root-dirs)
+  ;; `gtags-mode-create' may rebuild a project other than the one of
+  ;; the parent buffer, whose caches the sentinel clears.
+  (dolist (plist gtags-mode--alist)
+    (plist-put plist :cache nil)
+    (plist-put plist :prefix-cache nil))
   (dolist (buff (buffer-list))
     (gtags-mode--message 2 "Updating all buffers")
     (with-current-buffer buff
-      (when buffer-file-name
-	(if (buffer-local-value 'gtags-mode--plist buff)
-	    (setq-local gtags-mode--list-cache-plist nil) ;; cleanup the cache 
-	  (gtags-mode--set-connection-locals)
-	  (kill-local-variable 'gtags-mode--plist) ;; kill the local to reset it
-	  (gtags-mode--local-plist default-directory))))))
+      (when (and buffer-file-name (not gtags-mode--plist))
+	(gtags-mode--set-connection-locals)
+	(kill-local-variable 'gtags-mode--plist) ;; kill the local to reset it
+	(gtags-mode--local-plist default-directory)))))
 
 ;; Interactive commands ==============================================
 
@@ -418,11 +416,10 @@ won't have `buffer-file-name' but will just acquire one."
   (when (and buffer-file-name
 	     (gtags-mode--local-plist default-directory))
     (when-let* ((default-directory (plist-get gtags-mode--plist :gtagsroot))
-		(true-file-name gtags-mode--true-file-name)
-		(pr (gtags-mode--exec-async
-		     'gtags-mode--global "--single-update" (file-relative-name true-file-name))))
-      (process-put pr :extra-sentinel (lambda ()
-					(setq-local gtags-mode--list-cache-plist nil))))))
+		(true-file-name gtags-mode--true-file-name))
+      ;; The sentinel clears the project caches.
+      (gtags-mode--exec-async
+       'gtags-mode--global "--single-update" (file-relative-name true-file-name)))))
 
 ;; xref integration ==================================================
 (defun gtags-mode--xref-find-symbol (args symbol)
