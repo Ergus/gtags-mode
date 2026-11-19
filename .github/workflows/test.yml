@@ -7,6 +7,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     strategy:
       fail-fast: false
       matrix:
@@ -19,4 +22,15 @@ jobs:
       - name: Install GNU Global
         run: sudo apt-get update && sudo apt-get install -y global
       - name: Run tests
+        env:
+          # ERT writes gtags-mode-tests.xml next to the test file.
+          EMACS_TEST_JUNIT_REPORT: 1
         run: emacs -Q --batch -L . -l gtags-mode-tests.el -f ert-run-tests-batch-and-exit
+      - name: Report tests
+        if: always()
+        uses: mikepenz/action-junit-report@v6
+        with:
+          report_paths: gtags-mode-tests.xml
+          check_name: tests (Emacs ${{ matrix.emacs }})
+          include_passed: true
+          detailed_summary: true
