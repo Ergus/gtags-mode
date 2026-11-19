@@ -95,3 +95,28 @@ This variable can be set in the
 or as a
 [*connection-local-variable*](https://www.gnu.org/software/emacs/manual/html_node/elisp/Connection-Local-Variables.html)
 
+Tests
+-----
+
+The tests require GNU Global and `sh`.  Run them from the repository
+root with:
+
+```shell
+emacs -Q --batch -L . -l gtags-mode-tests.el -f ert-run-tests-batch-and-exit
+```
+
+Most tests run twice: on a local project and through TRAMP.  The
+TRAMP variant uses a `mock` method that logs into a local `sh`, so no
+remote host or server is needed; these tests are skipped when the
+method is unavailable.
+
+To run a subset, pass an ERT selector instead, e.g. only the TRAMP
+tests:
+
+```shell
+emacs -Q --batch -L . -l gtags-mode-tests.el \
+      --eval '(ert-run-tests-batch-and-exit "/remote$")'
+```
+
+GitHub Actions runs the tests with Emacs 30.1 and the development
+snapshot on every push to `master`.
