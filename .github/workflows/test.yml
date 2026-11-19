@@ -53,3 +53,16 @@ jobs:
             /^DA:/ { n++; if ($3 > 0) c++; else missed = missed (missed ? ", " : "") $2 }
             /^end_of_record/ { printf "| %s | %d/%d | %.1f%% | %s |\n", file, c, n, 100 * c / n, missed }
           ' coverage.info >> "$GITHUB_STEP_SUMMARY"
+      # undercover writes absolute paths; Coveralls maps paths relative
+      # to the repository root onto the sources.
+      - name: Make coverage paths relative
+        if: always() && hashFiles('coverage.info') != ''
+        run: sed -i "s|^SF:$GITHUB_WORKSPACE/|SF:|" coverage.info
+      - name: Upload coverage to Coveralls
+        if: always() && hashFiles('coverage.info') != ''
+        uses: coverallsapp/github-action@v2
+        with:
+          file: coverage.info
+          format: lcov
+          # A Coveralls outage must not fail the tests.
+          fail-on-error: false

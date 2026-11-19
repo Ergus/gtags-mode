@@ -1,6 +1,9 @@
 Readme
 ======
 
+[![test](https://github.com/Ergus/gtags-mode/actions/workflows/test.yml/badge.svg?branch=master)](https://github.com/Ergus/gtags-mode/actions/workflows/test.yml)
+[![Coverage Status](https://coveralls.io/repos/github/Ergus/gtags-mode/badge.svg?branch=master)](https://coveralls.io/github/Ergus/gtags-mode?branch=master)
+
 This package provides GNU Global integration with xref, project,
 completion-at-point (capf) and imenu in emacs.
 
@@ -119,4 +122,7 @@ emacs -Q --batch -L . -l gtags-mode-tests.el \
 ```
 
 GitHub Actions runs the tests with Emacs 30.1 and the development
-snapshot on every push to `master`.
+snapshot on every push to `master`.  The Emacs 30.1 run measures
+coverage with [undercover](https://github.com/undercover-el/undercover.el),
+shows it in the job summary and uploads it to
+[Coveralls](https://coveralls.io/github/Ergus/gtags-mode).
