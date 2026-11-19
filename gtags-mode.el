@@ -5,8 +5,8 @@
 ;; Author: Jimmy Aguilar Mena
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
-;; Version: 1.9.5
-;; Package-Requires: ((emacs "28"))
+;; Version: 1.9.6
+;; Package-Requires: ((emacs "30"))
 
 ;; This program is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -47,6 +47,8 @@
 (require 'xref)
 (require 'files-x)
 (eval-when-compile (require 'subr-x))
+
+(defvar project-files-relative-names)  ;; project.el, Emacs 30
 
 (defgroup gtags-mode nil
   "GNU Global group for xref."
