@@ -1,5 +1,7 @@
 ;;; gtags-mode-tests.el --- Tests for gtags-mode. -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026-2026  Free Software Foundation, Inc.
+
 ;;; Commentary:
 
 ;; Run with:
@@ -17,7 +19,8 @@
 ;; Coverage, when undercover is installed.  It must instrument
 ;; gtags-mode.el before it is loaded.  It is active only on CI or with
 ;; UNDERCOVER_FORCE set.
-(when (require 'undercover nil t)
+(when (eval-when-compile (require 'undercover nil t))
+  ;; This would be miscompiled when `undercover' is not available.
   (undercover "gtags-mode.el"
 	      (:report-format 'lcov)
 	      (:report-file "coverage.info")

@@ -1,8 +1,8 @@
-;;; gtags-mode.el --- GNU Global integration with xref, project and imenu. -*- lexical-binding: t; -*-
+;;; gtags-mode.el --- GNU Global integration with xref, project and imenu  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2022-2025  Free Software Foundation, Inc.
+;; Copyright (C) 2022-2026  Free Software Foundation, Inc.
 
-;; Author: Jimmy Aguilar Mena
+;; Author: Jimmy Aguilar Mena <kratsbinovish@gmail.com>
 ;; URL: https://github.com/Ergus/gtags-mode
 ;; Keywords: xref, project, imenu, gtags, global
 ;; Version: 2.0.0
@@ -31,16 +31,16 @@
 ;; ggtags, gtags.el, gxref, agtags and some others referenced in:
 ;; https://www.gnu.org/software/global/links.html
 
-;; This package leaves all the work to the EMACS tools available for such
+;; This package leaves all the work to the Emacs tools available for such
 ;; functions and avoids external dependencies.  Unlike the other
 ;; packages; this module does not create extra special maps, bindings
 ;; or menus, but just adds support to the mentioned features to use
-;; gtags/global as a backend when possible.  We do special emphasis on
-;; minimalism, simplicity, efficiency and tramp support.
+;; gtags/global as a backend when possible.  We put special emphasis on
+;; minimalism, simplicity, efficiency, and Tramp support.
 
 ;; This package may be extended in the future with new features and to
 ;; support other tools, but only if they are required and included in
-;; an EMACS distribution and don't need external dependencies.
+;; an Emacs distribution and don't need external dependencies.
 
 ;;; Code:
 

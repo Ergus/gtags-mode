@@ -1,3 +1,7 @@
 *.elc
 gtags-mode-tests.xml
 coverage.info
+
+# ELPA-generated files.
+/gtags-mode-autoloads.el
+/gtags-mode-pkg.el
